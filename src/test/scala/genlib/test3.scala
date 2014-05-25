@@ -1,4 +1,4 @@
-import genlib.examples._
+import selfassembly.examples._
 
 case class Person3(var name: String, var age: Int)
 

@@ -2,7 +2,7 @@
  * Copyright (C) 2014 LAMP/EPFL
  * Copyright (C) 2014 Typesafe Inc. <http://www.typesafe.com>
  */
-package genlib
+package selfassembly
 
 import scala.reflect.macros.blackbox.Context
 import scala.collection.mutable.{Map => MutableMap, ListBuffer => MutableList, WeakHashMap, Set => MutableSet}

@@ -1,4 +1,4 @@
-name := "genlib"
+name := "selfassembly"
 
 version := "0.1-SNAPSHOT"
 

@@ -5,13 +5,13 @@
  * @author Philipp Haller
  * @author Heather Miller
  */
-package genlib
+package selfassembly
 
 import scala.language.experimental.macros
 import scala.reflect.macros.blackbox.Context
 
 
-object genlib {
+object selfassembly {
   private val visitedTL = new ThreadLocal[Set[Any]] {
     override def initialValue() = Set[Any]()
   }
@@ -172,7 +172,7 @@ trait CyclicQuery extends Query {
 
       q"""
         var combineResult: $qresTpe = ${trees.first(tpe)}
-        if (!genlib.genlib.lookupVisitee(visitee)) {
+        if (!selfassembly.selfassembly.lookupVisitee(visitee)) {
           ..$fieldTrees
         }
         val postfix: $qresTpe = ${trees.last(tpe)}

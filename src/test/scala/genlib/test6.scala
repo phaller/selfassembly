@@ -1,4 +1,4 @@
-import genlib.examples._
+import selfassembly.examples._
 
 sealed trait Person6
 case class Employee(name: String, age: Int) extends Person6

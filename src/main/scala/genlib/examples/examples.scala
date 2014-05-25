@@ -5,7 +5,7 @@
  * @author Philipp Haller
  * @author Heather Miller
  */
-package genlib
+package selfassembly
 package examples
 
 import scala.language.experimental.macros
