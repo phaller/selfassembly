@@ -39,7 +39,6 @@ trait Traversal {
       val (typeString, instanceName) = names(tpe)
       val instType                   = appliedType(tpeOfTypeClass, tpe)
       val methodName                 = tpeOfTypeClass.decls.head.asMethod.name
-
       q"""
         implicit object $instanceName extends $instType {
           def $methodName(visitee: $tpe): $qresTpe = $tree
@@ -48,14 +47,17 @@ trait Traversal {
       """
     }
 
+    def implicitlyTree(tpe: c.Type, tpeOfTypeClass: c.Type): c.Tree = {
+      val instType = appliedType(tpeOfTypeClass, tpe)
+      q"implicitly[$instType]"
+    }
+
     def fieldValueTree(name: String, tpe: c.Type, tpeOfTypeClass: c.Type): c.Tree = {
-      val instType   = appliedType(tpeOfTypeClass, tpe)
       val instTree   = q"inst"
       val fieldTree  = q"value"
       val invokeTree = invoke(instTree, fieldTree)
-
       q"""
-        val inst = implicitly[$instType]
+        val inst = ${implicitlyTree(tpe, tpeOfTypeClass)}
         val value = visitee.${TermName(name)}
         $invokeTree
       """
@@ -89,7 +91,9 @@ trait Traversal {
 }
 
 
-// query that handles cycles in object graph
+/**
+ * Query that handles cycles in object graph.
+ */
 trait CyclicQuery extends Query {
 
   def mkTrees[C <: Context with Singleton](c: C): Trees[C]
@@ -98,6 +102,7 @@ trait CyclicQuery extends Query {
 
   override def genQuery[T: c.WeakTypeTag, S <: Singleton : c.WeakTypeTag](c: Context): c.Tree = {
     import c.universe._
+    import definitions.NullTpe
 
     val tpe            = weakTypeOf[T]
     val stpe           = weakTypeOf[S]
@@ -106,6 +111,34 @@ trait CyclicQuery extends Query {
     val qresTpe        = tpeOfTypeClass.decls.head.asMethod.returnType
 
     val trees = mkTrees[c.type](c)
+    val tools = new Tools[c.type](c)
+
+    def genDispatchLogic: Option[c.Tree] = {
+      val sym = tpe.typeSymbol
+
+      def nonFinalDispatch = {
+        val nullDispatch =
+          CaseDef(Literal(Constant(null)), EmptyTree, trees.invoke(trees.implicitlyTree(NullTpe, tpeOfTypeClass), q"null"))
+        val compileTimeDispatch =
+          tools.compileTimeDispatchees(tpe, rootMirror) filter (_ != NullTpe) map (subtpe =>
+            CaseDef(Bind(newTermName("clazz"), Ident(nme.WILDCARD)), q"clazz == classOf[$subtpe]",
+              trees.invoke(trees.implicitlyTree(subtpe, tpeOfTypeClass), q"visitee.asInstanceOf[$subtpe]")
+            )
+          )
+        //val runtimeDispatch =
+        //  CaseDef(Ident(nme.WILDCARD), EmptyTree, q"SPickler.genPickler(this.getClass.getClassLoader, clazz)")
+
+        //${Match(q"clazz", nullDispatch +: compileTimeDispatch :+ runtimeDispatch)}
+        q"""
+          val clazz = if (visitee != null) visitee.getClass else null
+          ${Match(q"clazz", nullDispatch +: compileTimeDispatch)}
+        """
+      }
+
+      if (sym.asInstanceOf[scala.reflect.internal.Symbols#Symbol].isEffectivelyFinal || sym.asClass.isCaseClass) None
+      //TODO: check that the class is sealed abstract
+      else Some(nonFinalDispatch)
+    }
 
     def theLogic: Tree = {
       val paramFields = trees.paramFieldsOf(tpe)
@@ -152,7 +185,13 @@ trait CyclicQuery extends Query {
       case definitions.NothingTpe =>
         c.abort(c.enclosingPosition, "urk!")
       case _ =>
-        theLogic
+        /* tpe might be an abstract class (handle only sealed classes for now)
+           Thus, we first do a dynamic dispatch to find out which concrete instance to dispatch to.
+        */
+        genDispatchLogic match {
+          case Some(invokeInstance) => invokeInstance
+          case None => theLogic
+        }
     }
 
     trees.instance(tpe, tpeOfTypeClass, qresTpe, tree)

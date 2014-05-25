@@ -97,37 +97,30 @@ object Show extends CyclicQuery {
     new Trees(c)
 
   class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
-    def combine(left: c.Tree, right: c.Tree): c.Tree = {
-      import c.universe._
-      q"$left + $right"
-    }
+    import c.universe._
 
-    def invoke(inst: c.Tree, value: c.Tree): c.Tree = {
-      import c.universe._
+    def combine(left: c.Tree, right: c.Tree): c.Tree =
+      q"$left + $right"
+
+    def invoke(inst: c.Tree, value: c.Tree): c.Tree =
       q"$inst.doIt($value)"
-    }
 
     def first(tpe: c.Type): c.Tree = {
-      import c.universe._
       val typeString = tpe.toString.split('.').map(_.capitalize).mkString("")
       q"""
         $typeString + "("
       """
     }
 
-    def last(tpe: c.Type): c.Tree = {
-      import c.universe._
+    def last(tpe: c.Type): c.Tree =
       q"""
         ")"
       """
-    }
 
-    def separator: c.Tree = {
-      import c.universe._
+    def separator: c.Tree =
       q"""
         ", "
       """
-    }
   }
 
   implicit def generate[T]: Show[T] = macro genQuery[T, this.type]
