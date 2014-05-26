@@ -11,18 +11,13 @@ import scala.language.experimental.macros
 import scala.reflect.macros.blackbox.Context
 
 
-object selfassembly {
-  private val visitedTL = new ThreadLocal[Set[Any]] {
-    override def initialValue() = Set[Any]()
-  }
-
-  def lookupVisitee(visitee: Any): Boolean = {
-    val visited = visitedTL.get()
-    visited(visitee) || {
-      visitedTL.set(visited + visitee)
-      false
-    }
-  }
+/**
+ * To handle cycles in a more local way, we require type classes
+ * to extend the `Queryable` trait.
+ */
+trait Queryable[T, R] {
+  // used for invocations that are not top-level
+  def apply(visitee: T, visited: Set[Any]): R
 }
 
 
@@ -33,7 +28,17 @@ trait Traversal {
   abstract class Trees[C <: Context with Singleton](val c: C) {
     import c.universe._
 
-    def invoke(inst: c.Tree, value: c.Tree): c.Tree
+    /**
+     * Apply the type class instance `inst` to value `value`.
+     */
+    def invoke(inst: c.Tree, value: c.Tree): c.Tree =
+      q"$inst.apply($value, visited + visitee)"
+
+    /**
+     * Apply the type class instance `inst` to value `value`.
+     */
+    def invokeNotVisited(inst: c.Tree, value: c.Tree): c.Tree =
+      q"$inst.apply($value, visited)"
 
     def instance(tpe: c.Type, tpeOfTypeClass: c.Type, qresTpe: c.Type, tree: c.Tree): c.Tree = {
       val (typeString, instanceName) = names(tpe)
@@ -41,7 +46,8 @@ trait Traversal {
       val methodName                 = tpeOfTypeClass.decls.head.asMethod.name
       q"""
         implicit object $instanceName extends $instType {
-          def $methodName(visitee: $tpe): $qresTpe = $tree
+          def $methodName(visitee: $tpe): $qresTpe = apply(visitee, scala.collection.immutable.Set[Any]())
+          def apply(visitee: $tpe, visited: scala.collection.immutable.Set[Any]) = $tree
         }
         $instanceName
       """
@@ -118,11 +124,11 @@ trait CyclicQuery extends Query {
 
       def nonFinalDispatch = {
         val nullDispatch =
-          CaseDef(Literal(Constant(null)), EmptyTree, trees.invoke(trees.implicitlyTree(NullTpe, tpeOfTypeClass), q"null"))
+          CaseDef(Literal(Constant(null)), EmptyTree, trees.invokeNotVisited(trees.implicitlyTree(NullTpe, tpeOfTypeClass), q"null"))
         val compileTimeDispatch =
           tools.compileTimeDispatchees(tpe, rootMirror) filter (_ != NullTpe) map (subtpe =>
             CaseDef(Bind(newTermName("clazz"), Ident(nme.WILDCARD)), q"clazz == classOf[$subtpe]",
-              trees.invoke(trees.implicitlyTree(subtpe, tpeOfTypeClass), q"visitee.asInstanceOf[$subtpe]")
+              trees.invokeNotVisited(trees.implicitlyTree(subtpe, tpeOfTypeClass), q"visitee.asInstanceOf[$subtpe]")
             )
           )
         //val runtimeDispatch =
@@ -172,7 +178,7 @@ trait CyclicQuery extends Query {
 
       q"""
         var combineResult: $qresTpe = ${trees.first(tpe)}
-        if (!selfassembly.selfassembly.lookupVisitee(visitee)) {
+        if (!visited(visitee)) {
           ..$fieldTrees
         }
         val postfix: $qresTpe = ${trees.last(tpe)}
@@ -349,7 +355,7 @@ trait Property extends Query {
       q"$left ; $right"
     }
 
-    def invoke(inst: c.Tree, value: c.Tree): c.Tree = {
+    override def invoke(inst: c.Tree, value: c.Tree): c.Tree = {
       import c.universe._
       q"{}"
     }

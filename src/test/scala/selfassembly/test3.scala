@@ -12,4 +12,5 @@ object Test3 extends App {
   val ts2: Scale[Person3] = implicitly[Scale[Person3]]
   val s2 = ts2.scale(p)
   println(s2)
+  assert(s2.toString == "Person3(joe,400)")
 }

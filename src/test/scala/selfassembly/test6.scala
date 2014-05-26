@@ -10,4 +10,5 @@ object Test6 extends App {
   val ts: Show[Person6] = implicitly[Show[Person6]]
   val s = ts.doIt(e)
   println(s)
+  assert(s == "Employee(joe, 40)")
 }

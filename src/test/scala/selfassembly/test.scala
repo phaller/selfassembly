@@ -12,4 +12,5 @@ object Test extends App {
   val ts2: ToString[Person] = implicitly[ToString[Person]]
   val s2 = ts2.mkString(p)
   println(s2)
+  assert(s2 == "Person(joe, 40)")
 }

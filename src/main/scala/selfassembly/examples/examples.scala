@@ -12,7 +12,7 @@ import scala.language.experimental.macros
 import scala.reflect.macros.blackbox.Context
 
 
-trait ToString[T] {
+trait ToString[T] extends Queryable[T, String] {
   def mkString(x: T): String
 }
 
@@ -45,14 +45,6 @@ object ToString extends Query {
       tq"ToString[$elemTpe]"
     }*/
 
-    /**
-     * Apply the type class instance `inst` to value `value`.
-     */
-    def invoke(inst: c.Tree, value: c.Tree): c.Tree = {
-      import c.universe._
-      q"$inst.mkString($value)"
-    }
-
     def first(tpe: c.Type): c.Tree = {
       import c.universe._
       val typeString = tpe.toString.split('.').map(_.capitalize).mkString("")
@@ -80,15 +72,17 @@ object ToString extends Query {
 
   implicit val intToString: ToString[Int] = new ToString[Int] {
     def mkString(x: Int): String = "" + x
+    def apply(visitee: Int, visited: Set[Any]) = mkString(visitee)
   }
 
   implicit val stringToString: ToString[String] = new ToString[String] {
     def mkString(x: String): String = x
+    def apply(visitee: String, visited: Set[Any]) = mkString(visitee)
   }
 }
 
 
-trait Show[T] {
+trait Show[T] extends Queryable[T, String] {
   def doIt(x: T): String
 }
 
@@ -101,9 +95,6 @@ object Show extends CyclicQuery {
 
     def combine(left: c.Tree, right: c.Tree): c.Tree =
       q"$left + $right"
-
-    def invoke(inst: c.Tree, value: c.Tree): c.Tree =
-      q"$inst.doIt($value)"
 
     def first(tpe: c.Type): c.Tree = {
       val typeString = tpe.toString.split('.').map(_.capitalize).mkString("")
@@ -127,10 +118,12 @@ object Show extends CyclicQuery {
 
   implicit val intHasShow: Show[Int] = new Show[Int] {
     def doIt(x: Int): String = "" + x
+    def apply(visitee: Int, visited: Set[Any]): String = doIt(visitee)
   }
 
   implicit val stringHasShow: Show[String] = new Show[String] {
     def doIt(x: String): String = x
+    def apply(visitee: String, visited: Set[Any]): String = doIt(visitee)
   }
 }
 
@@ -163,7 +156,7 @@ object Immutable extends Property {
 }
 
 
-trait Scale[T] {
+trait Scale[T] extends Queryable[T, T] {
   def scale(x: T): T
 }
 
@@ -174,20 +167,17 @@ object Scale extends Transform {
   def mkTrees[C <: Context with Singleton](c: C): Trees[C] =
     new Trees(c)
 
-  class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
-    def invoke(inst: c.Tree, value: c.Tree): c.Tree = {
-      import c.universe._
-      q"$inst.scale($value)"
-    }
-  }
+  class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c)
 
   implicit def generate[T]: Scale[T] = macro genTransform[T, this.type]
 
   implicit val intHasScale: Scale[Int] = new Scale[Int] {
     def scale(x: Int): Int = x * 10
+    def apply(visitee: Int, visited: Set[Any]): Int = scale(visitee)
   }
 
   implicit val stringHasScale: Scale[String] = new Scale[String] {
     def scale(x: String): String = x
+    def apply(visitee: String, visited: Set[Any]): String = scale(visitee)
   }
 }
