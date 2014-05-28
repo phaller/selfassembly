@@ -28,15 +28,15 @@ object example {
 
 }
 
-object ToString extends Query {
+object ToString extends Query[String] {
 
   def mkTrees[C <: Context with Singleton](c: C): Trees[C] =
     new Trees(c)
 
   class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
-    def combine(left: c.Tree, right: c.Tree): c.Tree = {
+    def combine(left: c.Expr[String], right: c.Expr[String]): c.Expr[String] = {
       import c.universe._
-      q"$left + $right"
+      c.Expr[String](q"$left + $right")
     }
 
     // Note: this can be automated based on the type of the enclosing singleton object
@@ -45,26 +45,26 @@ object ToString extends Query {
       tq"ToString[$elemTpe]"
     }*/
 
-    def first(tpe: c.Type): c.Tree = {
+    def first(tpe: c.Type): c.Expr[String] = {
       import c.universe._
       val typeString = tpe.toString.split('.').map(_.capitalize).mkString("")
-      q"""
+      c.Expr[String](q"""
         $typeString + "("
-      """
+      """)
     }
 
-    def last(tpe: c.Type): c.Tree = {
+    def last(tpe: c.Type): c.Expr[String] = {
       import c.universe._
-      q"""
+      c.Expr[String](q"""
         ")"
-      """
+      """)
     }
 
-    def separator: c.Tree = {
+    def separator: c.Expr[String] = {
       import c.universe._
-      q"""
+      c.Expr[String](q"""
         ", "
-      """
+      """)
     }
   }
 
@@ -86,32 +86,28 @@ trait Show[T] extends Queryable[T, String] {
   def show(x: T): String
 }
 
-object Show extends CyclicQuery {
+object Show extends CyclicQuery[String] {
   def mkTrees[C <: Context with Singleton](c: C): Trees[C] =
     new Trees(c)
 
   class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
     import c.universe._
 
-    def combine(left: c.Tree, right: c.Tree): c.Tree =
-      q"$left + $right"
+    def combine(left: c.Expr[String], right: c.Expr[String]): c.Expr[String] =
+      c.Expr(q"$left + $right")
 
-    def first(tpe: c.Type): c.Tree = {
+    def first(tpe: c.Type): c.Expr[String] = {
       val typeString = tpe.typeSymbol.name.toString
-      q"""
+      c.Expr(q"""
         $typeString + "("
-      """
+      """)
     }
 
-    def last(tpe: c.Type): c.Tree =
-      q"""
-        ")"
-      """
+    def last(tpe: c.Type): c.Expr[String] =
+      reify(")")
 
-    def separator: c.Tree =
-      q"""
-        ", "
-      """
+    def separator: c.Expr[String] =
+      reify(", ")
   }
 
   implicit def generate[T]: Show[T] = macro genQuery[T, this.type]
@@ -132,7 +128,7 @@ trait Immutable[T] {
   def noop(x: T): Unit
 }
 
-object Immutable extends Property {
+object Immutable extends Property[Unit] {
   def mkTrees[C <: Context with Singleton](c: C): Trees[C] =
     new Trees(c)
 
