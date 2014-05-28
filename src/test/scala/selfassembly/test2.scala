@@ -1,16 +1,19 @@
+import org.junit.Test
 import selfassembly.examples._
 
 case class Person2(name: String, age: Int)
 
-object Test2 extends App {
+class ShowSpec {
+  @Test def testInt() {
+    val ts: Show[Int] = implicitly[Show[Int]]
+    val s = ts.show(42)
+    assert(s == "42")
+  }
 
-  val p = Person2("joe", 40)
-  val ts: Show[Int] = implicitly[Show[Int]]
-  val s = ts.show(42)
-  println(s)
-
-  val ts2: Show[Person2] = implicitly[Show[Person2]]
-  val s2 = ts2.show(p)
-  println(s2)
-  assert(s2 == "Person2(joe, 40)")
+  @Test def testCaseClass() {
+    val p = Person2("joe", 40)
+    val ts2: Show[Person2] = implicitly[Show[Person2]]
+    val s2 = ts2.show(p)
+    assert(s2 == "Person2(joe, 40)")
+  }
 }
