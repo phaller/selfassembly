@@ -1,9 +1,11 @@
+import selfassembly._
 import selfassembly.examples._
 
 sealed trait Person6
 case class Employee(name: String, age: Int) extends Person6
 
 object Test6 extends App {
+  implicit val reg = new SimpleRegistry[Show]
 
   val e = Employee("joe", 40)
 

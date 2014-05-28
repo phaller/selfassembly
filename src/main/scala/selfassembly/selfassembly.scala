@@ -131,13 +131,23 @@ trait CyclicQuery extends Query {
               trees.invokeNotVisited(trees.implicitlyTree(subtpe, tpeOfTypeClass), q"visitee.asInstanceOf[$subtpe]")
             )
           )
-        //val runtimeDispatch =
-        //  CaseDef(Ident(nme.WILDCARD), EmptyTree, q"SPickler.genPickler(this.getClass.getClassLoader, clazz)")
+        val registryName = c.fresh(TermName("registry"))
+        val lookupName = c.fresh(TermName("lookup"))
+        val typeOfInstance = appliedType(tpeOfTypeClass, tpe)
+        val castedInstanceTree = q"$lookupName.asInstanceOf[$typeOfInstance]"
+        val invocationTree = trees.invokeNotVisited(castedInstanceTree, q"visitee")
 
-        //${Match(q"clazz", nullDispatch +: compileTimeDispatch :+ runtimeDispatch)}
+        val registryLookup = q"""
+          val $registryName = implicitly[selfassembly.Registry[$tpeOfTypeClass]]
+          val $lookupName = $registryName.get(clazz)
+          $invocationTree
+        """
+        val runtimeDispatch =
+          CaseDef(Ident(nme.WILDCARD), EmptyTree, registryLookup)
+
         q"""
           val clazz = if (visitee != null) visitee.getClass else null
-          ${Match(q"clazz", nullDispatch +: compileTimeDispatch)}
+          ${Match(q"clazz", nullDispatch +: compileTimeDispatch :+ runtimeDispatch)}
         """
       }
 
