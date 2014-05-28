@@ -83,7 +83,7 @@ object ToString extends Query {
 
 
 trait Show[T] extends Queryable[T, String] {
-  def doIt(x: T): String
+  def show(x: T): String
 }
 
 object Show extends CyclicQuery {
@@ -97,7 +97,7 @@ object Show extends CyclicQuery {
       q"$left + $right"
 
     def first(tpe: c.Type): c.Tree = {
-      val typeString = tpe.toString.split('.').map(_.capitalize).mkString("")
+      val typeString = tpe.typeSymbol.name.toString
       q"""
         $typeString + "("
       """
@@ -117,13 +117,13 @@ object Show extends CyclicQuery {
   implicit def generate[T]: Show[T] = macro genQuery[T, this.type]
 
   implicit val intHasShow: Show[Int] = new Show[Int] {
-    def doIt(x: Int): String = "" + x
-    def apply(visitee: Int, visited: Set[Any]): String = doIt(visitee)
+    def show(x: Int): String = "" + x
+    def apply(visitee: Int, visited: Set[Any]): String = show(visitee)
   }
 
   implicit val stringHasShow: Show[String] = new Show[String] {
-    def doIt(x: String): String = x
-    def apply(visitee: String, visited: Set[Any]): String = doIt(visitee)
+    def show(x: String): String = x
+    def apply(visitee: String, visited: Set[Any]): String = show(visitee)
   }
 }
 

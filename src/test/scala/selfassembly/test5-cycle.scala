@@ -5,7 +5,7 @@ case class Person5(name: String, age: Int, var parent: Person5)
 object Test5 extends App {
 
   val ts: Show[Int] = implicitly[Show[Int]]
-  val s = ts.doIt(42)
+  val s = ts.show(42)
   println(s)
 
   // joe has a very interesting relationship with himself
@@ -13,7 +13,7 @@ object Test5 extends App {
   p.parent = p
 
   val ts2: Show[Person5] = implicitly[Show[Person5]]
-  val s2 = ts2.doIt(p)
+  val s2 = ts2.show(p)
   println(s2)
   assert(s2 == "Person5(joe, 40, Person5())")
 }

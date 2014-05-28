@@ -8,7 +8,7 @@ object Test6 extends App {
   val e = Employee("joe", 40)
 
   val ts: Show[Person6] = implicitly[Show[Person6]]
-  val s = ts.doIt(e)
+  val s = ts.show(e)
   println(s)
   assert(s == "Employee(joe, 40)")
 }
