@@ -100,7 +100,7 @@ trait Traversal[R] {
 /**
  * Query that handles cycles in object graph.
  */
-trait CyclicQuery[R] extends Query[R] {
+trait Query[R] extends AcyclicQuery[R] {
 
   def mkTrees[C <: Context with Singleton](c: C): Trees[C]
 
@@ -215,7 +215,7 @@ trait CyclicQuery[R] extends Query[R] {
 }
 
 
-trait Query[R] extends Traversal[R] {
+trait AcyclicQuery[R] extends Traversal[R] {
 
   def mkTrees[C <: Context with Singleton](c: C): Trees[C]
 
@@ -353,7 +353,7 @@ trait Transform extends Traversal[Any] {
 }
 
 
-trait Property[R] extends Query[R] {
+trait Property[R] extends AcyclicQuery[R] {
   def mkTrees[C <: Context with Singleton](c: C): Trees[C]
 
   abstract class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {

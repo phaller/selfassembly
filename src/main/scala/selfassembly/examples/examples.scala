@@ -28,7 +28,7 @@ object example {
 
 }
 
-object ToString extends Query[String] {
+object ToString extends AcyclicQuery[String] {
 
   def mkTrees[C <: Context with Singleton](c: C): Trees[C] =
     new Trees(c)
@@ -86,7 +86,7 @@ trait Show[T] extends Queryable[T, String] {
   def show(x: T): String
 }
 
-object Show extends CyclicQuery[String] {
+object Show extends Query[String] {
   def mkTrees[C <: Context with Singleton](c: C): Trees[C] =
     new Trees(c)
 
