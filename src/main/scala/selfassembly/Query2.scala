@@ -10,120 +10,10 @@ package selfassembly
 import scala.language.experimental.macros
 import scala.reflect.macros.blackbox.Context
 
-
 /**
- * To handle cycles in a more local way, we require type classes
- * to extend the `Queryable` trait.
+ * Binary query that handles cycles in object graphs.
  */
-trait Queryable[T, R] {
-  // used for invocations that are not top-level
-  def apply(visitee: T, visited: Set[Any]): R
-}
-
-
-trait Traversal[R] {
-
-  def mkTrees[C <: Context with Singleton](c: C): Trees[C]
-
-  abstract class Trees[C <: Context with Singleton](val c: C) {
-    import c.universe._
-
-    /**
-     * Apply the type class instance `inst` to value `value`.
-     */
-    def invoke(inst: c.Tree, value: c.Tree): c.Tree =
-      q"$inst.apply(${inject(value)}, visited + visitee)"
-
-    /**
-     * Apply the type class instance `inst` to value `value`.
-     */
-    def invokeNotVisited(inst: c.Tree, value: c.Tree): c.Tree =
-      q"$inst.apply(${inject(value)}, visited)"
-
-    def instance(tpe: c.Type, tpeOfTypeClass: c.Type, paramTpe: c.Type, qresTpe: c.Type, tree: c.Tree): c.Tree = {
-      val (typeString, instanceName) = names(tpe)
-      val instType                   = appliedType(tpeOfTypeClass, tpe)
-      val methodName                 = tpeOfTypeClass.decls.head.asMethod.name
-      q"""
-        implicit object $instanceName extends $instType {
-          def $methodName(visitee: $paramTpe): $qresTpe = apply(visitee, scala.collection.immutable.Set[Any]())
-          def apply(visitee: $paramTpe, visited: scala.collection.immutable.Set[Any]) = $tree
-        }
-        $instanceName
-      """
-    }
-
-    def implicitlyTree(tpe: c.Type, tpeOfTypeClass: c.Type): c.Tree =
-      q"implicitly[${appliedType(tpeOfTypeClass, tpe)}]"
-
-    def fieldValueTree(name: String, tpe: c.Type, tpeOfTypeClass: c.Type): c.Tree = {
-      val valueName     = c.fresh(TermName("value"))
-      val innerMostTree = innerMostFieldLogic(q"$valueName", tpe, tpeOfTypeClass)
-      val getterTree    = getterLogic(name)
-      putField(getterTree, innerMostTree, valueName, name, tpe)
-    }
-
-    def getterLogic(fieldName: String): c.Tree = {
-      val projected = project(q"visitee")
-      q"$projected.${TermName(fieldName)}"
-    }
-
-    def innerMostFieldLogic(valuesTree: c.Tree, fieldTpe: c.Type, tpeOfTypeClass: c.Type): c.Tree = {
-      val instType = appliedType(tpeOfTypeClass, fieldTpe)
-      q"""
-        val inst: $instType = ${implicitlyTree(fieldTpe, tpeOfTypeClass)}
-        ${invoke(q"inst", q"$valuesTree")}
-      """
-    }
-
-    def putField(getterLogic: Tree, innerMostFieldLogic: c.Tree, nameOfValue: c.TermName,
-                 fieldNameString: String, fieldTpe: c.Type): c.Tree =
-      q"""
-        val $nameOfValue: $fieldTpe = $getterLogic
-        $innerMostFieldLogic
-      """
-
-    def names(tpe: c.Type): (String, c.TermName) = {
-      val typeString = tpe.toString.split('.').map(_.capitalize).mkString("")
-      val typeName   = c.universe.TypeName(typeString)
-      (typeString, c.freshName(typeName.toTermName))
-    }
-
-    def paramFieldsOf(tpe: c.Type): List[c.Symbol] = {
-      val ctor = tpe.decl(termNames.CONSTRUCTOR) match {
-        case overloaded: TermSymbol =>
-          overloaded.alternatives.head.asMethod
-        case primaryCtor: MethodSymbol =>
-          primaryCtor
-        case NoSymbol =>
-          NoSymbol
-      }
-      val ctorParams =
-        if (ctor != NoSymbol) ctor.asMethod.paramLists.flatten.map(_.asTerm) else List()
-      val allAccessors =
-        tpe.decls.collect { case meth: MethodSymbol if meth.isAccessor || meth.isParamAccessor => meth }
-      val (paramAccessors, otherAccessors) =
-        allAccessors.partition(_.isParamAccessor)
-      // ctor params that are also fields (TODO: verify)
-      ctorParams.filter(sym => paramAccessors.find(_.name == sym.name).nonEmpty)
-    }
-
-    def inject(fieldValue: c.Tree): c.Tree =
-      q"$fieldValue"
-
-    def project(param: c.Tree): c.Tree =
-      q"$param"
-
-    def preInvoke(fieldTpe: c.Type): c.Tree =
-      q"{}"
-  }
-}
-
-
-/**
- * Query that handles cycles in object graph.
- */
-trait Query[R] extends AcyclicQuery[R] {
+trait Query2[R] extends AcyclicQuery2[R] {
 
   def mkTrees[C <: Context with Singleton](c: C): Trees[C]
 
@@ -246,7 +136,7 @@ trait Query[R] extends AcyclicQuery[R] {
 }
 
 
-trait AcyclicQuery[R] extends Traversal[R] {
+trait AcyclicQuery2[R] extends Traversal2[R] {
 
   def mkTrees[C <: Context with Singleton](c: C): Trees[C]
 
@@ -333,101 +223,109 @@ trait AcyclicQuery[R] extends Traversal[R] {
 
 }
 
-trait Transform extends Traversal[Any] {
 
-  def genTransform[T: c.WeakTypeTag, S <: Singleton : c.WeakTypeTag](c: Context): c.Tree = {
+trait Traversal2[R] {
+
+  def mkTrees[C <: Context with Singleton](c: C): Trees[C]
+
+  abstract class Trees[C <: Context with Singleton](val c: C) {
     import c.universe._
 
-    val tpe            = weakTypeTag[T].tpe
-    val stpe           = weakTypeTag[S].tpe
-    val typeClassClass = stpe.typeSymbol.asClass.companion.asType.asClass
-    val tpeOfTypeClass = typeClassClass.toTypeConstructor
-    if (tpeOfTypeClass.decls.size > 1) c.abort(c.enclosingPosition, "trait must not have more than a single abstract method")
+    /**
+     * Apply the type class instance `inst` to value `value`.
+     */
+    def invoke(inst: c.Tree, value: c.Tree): c.Tree =
+      q"$inst.apply(${inject(value)}, visited + visitee)"
 
-    val typeClassMethod = tpeOfTypeClass.decls.head.asMethod
-    val paramSymbol     = typeClassMethod.paramLists.head.head
-    val instType        = appliedType(tpeOfTypeClass, tpe)
-    val paramTypeRaw    = paramSymbol.typeSignature
-    val paramTypeExact  = paramTypeRaw.asSeenFrom(instType, typeClassClass)
+    /**
+     * Apply the type class instance `inst` to value `value`.
+     */
+    def invokeNotVisited(inst: c.Tree, value: c.Tree): c.Tree =
+      q"$inst.apply(${inject(value)}, visited)"
 
-    val trees = mkTrees[c.type](c)
-
-    def theLogic: Tree = {
-      val paramFields = trees.paramFieldsOf(tpe)
-
-      val fieldTrees: List[Tree] = {
-        tpe match {
-          case ExistentialType(quantified, tpe) => c.abort(c.enclosingPosition, "urk!")
-          case _ => /* do nothing */
-        }
-        paramFields.map { sym => // don't call combine any more
-          val symTp      = sym.typeSignatureIn(tpe)
-          val fieldName  = sym.name.toString.trim
-          trees.fieldValueTree(fieldName, symTp, tpeOfTypeClass)
-        }
-      }
-
-      val instantiationLogic =
-        q"scala.concurrent.util.Unsafe.instance.allocateInstance(classOf[$tpe]).asInstanceOf[$tpe]"
-
-      val instance = TermName(tpe.typeSymbol.name + "Instance")
-
-      val initPendingFields = (paramFields zip fieldTrees).map {
-        case (sym, fldTree) =>
-          val fieldName = sym.name.toString.trim
-          q"$instance.${TermName(fieldName)} = $fldTree".asInstanceOf[Tree]
-      }
-
+    def instance(tpe: c.Type, tpeOfTypeClass: c.Type, paramTpe: c.Type, qresTpe: c.Type, tree: c.Tree): c.Tree = {
+      val (typeString, instanceName) = names(tpe)
+      val instType                   = appliedType(tpeOfTypeClass, tpe)
+      val methodName                 = tpeOfTypeClass.decls.head.asMethod.name
       q"""
-        val $instance = $instantiationLogic
-        ..$initPendingFields
-        $instance
+        implicit object $instanceName extends $instType {
+          def $methodName(visitee: $paramTpe): $qresTpe = apply(visitee, scala.collection.immutable.Set[Any]())
+          def apply(visitee: $paramTpe, visited: scala.collection.immutable.Set[Any]) = $tree
+        }
+        $instanceName
       """
     }
 
-    def tree: Tree = tpe match {
-      case definitions.NothingTpe =>
-        c.abort(c.enclosingPosition, "urk!")
-      case _ =>
-        theLogic
+    def implicitlyTree(tpe: c.Type, tpeOfTypeClass: c.Type): c.Tree =
+      q"implicitly[${appliedType(tpeOfTypeClass, tpe)}]"
+
+    def fieldValueTree(name: String, tpe: c.Type, tpeOfTypeClass: c.Type): c.Tree = {
+      val valueName1 = c.fresh(TermName("value1"))
+      val valueName2 = c.fresh(TermName("value2"))
+      val innerMostTree = innerMostFieldLogic(q"($valueName1, $valueName2)", tpe, tpeOfTypeClass)
+      val getterTree    = getterLogic(name)
+      putField(getterTree, innerMostTree, (valueName1, valueName2), name, tpe)
     }
 
-    trees.instance(tpe, tpeOfTypeClass, paramTypeExact, tpe, tree)
-  }
-
-}
-
-
-trait Property[R] extends AcyclicQuery[R] {
-  def mkTrees[C <: Context with Singleton](c: C): Trees[C]
-
-  abstract class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
-    def check(tpe: c.Type): Unit
-
-    def combine(left: c.Expr[R], right: c.Expr[R]): c.Expr[R] = {
-      import c.universe._
-      c.Expr[R](q"$left ; $right")
+    def getterLogic(fieldName: String): c.Tree = {
+      val projected = project(q"visitee")
+      q"$projected.${TermName(fieldName)}"
     }
 
-    override def invoke(inst: c.Tree, value: c.Tree): c.Tree = {
-      import c.universe._
+    def innerMostFieldLogic(valuesTree: c.Tree, fieldTpe: c.Type, tpeOfTypeClass: c.Type): c.Tree = {
+      val instType = appliedType(tpeOfTypeClass, fieldTpe)
+      q"""
+        val inst: $instType = ${implicitlyTree(fieldTpe, tpeOfTypeClass)}
+        ${invoke(q"inst", q"$valuesTree")}
+      """
+    }
+
+    // TODO: we're ignoring getterLogic right now, so maybe the original design can be improved
+    def putField(getterLogic: Tree, innerMostFieldLogic: c.Tree, namesOfValues: (c.TermName, c.TermName),
+                 fieldNameString: String, fieldTpe: c.Type): c.Tree = {
+      val getterTrees: List[c.Tree] =
+        (List(q"visitee._1", q"visitee._2") zip List(namesOfValues._1, namesOfValues._2)) map { case (gt, nv) =>
+          q"val $nv: $fieldTpe = $gt.${TermName(fieldNameString)}"
+        }
+
+      q"""
+        ..$getterTrees
+        $innerMostFieldLogic
+      """
+    }
+
+    def names(tpe: c.Type): (String, c.TermName) = {
+      val typeString = tpe.toString.split('.').map(_.capitalize).mkString("")
+      val typeName   = c.universe.TypeName(typeString)
+      (typeString, c.freshName(typeName.toTermName))
+    }
+
+    def paramFieldsOf(tpe: c.Type): List[c.Symbol] = {
+      val ctor = tpe.decl(termNames.CONSTRUCTOR) match {
+        case overloaded: TermSymbol =>
+          overloaded.alternatives.head.asMethod
+        case primaryCtor: MethodSymbol =>
+          primaryCtor
+        case NoSymbol =>
+          NoSymbol
+      }
+      val ctorParams =
+        if (ctor != NoSymbol) ctor.asMethod.paramLists.flatten.map(_.asTerm) else List()
+      val allAccessors =
+        tpe.decls.collect { case meth: MethodSymbol if meth.isAccessor || meth.isParamAccessor => meth }
+      val (paramAccessors, otherAccessors) =
+        allAccessors.partition(_.isParamAccessor)
+      // ctor params that are also fields (TODO: verify)
+      ctorParams.filter(sym => paramAccessors.find(_.name == sym.name).nonEmpty)
+    }
+
+    def inject(fieldValue: c.Tree): c.Tree =
+      q"$fieldValue"
+
+    def project(param: c.Tree): c.Tree =
+      q"$param"
+
+    def preInvoke(fieldTpe: c.Type): c.Tree =
       q"{}"
-    }
-
-    def first(tpe: c.Type): c.Expr[R] = {
-      import c.universe._
-      check(tpe)
-      c.Expr[R](q"{}")
-    }
-
-    def last(tpe: c.Type): c.Expr[R] = {
-      import c.universe._
-      c.Expr[R](q"{}")
-    }
-
-    def separator: c.Expr[R] = {
-      import c.universe._
-      c.Expr[R](q"{}")
-    }
   }
 }
