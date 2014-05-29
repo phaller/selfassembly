@@ -32,42 +32,56 @@ trait Traversal[R] {
      * Apply the type class instance `inst` to value `value`.
      */
     def invoke(inst: c.Tree, value: c.Tree): c.Tree =
-      q"$inst.apply($value, visited + visitee)"
+      q"$inst.apply(${inject(value)}, visited + visitee)"
 
     /**
      * Apply the type class instance `inst` to value `value`.
      */
     def invokeNotVisited(inst: c.Tree, value: c.Tree): c.Tree =
-      q"$inst.apply($value, visited)"
+      q"$inst.apply(${inject(value)}, visited)"
 
-    def instance(tpe: c.Type, tpeOfTypeClass: c.Type, qresTpe: c.Type, tree: c.Tree): c.Tree = {
+    def instance(tpe: c.Type, tpeOfTypeClass: c.Type, paramTpe: c.Type, qresTpe: c.Type, tree: c.Tree): c.Tree = {
       val (typeString, instanceName) = names(tpe)
       val instType                   = appliedType(tpeOfTypeClass, tpe)
       val methodName                 = tpeOfTypeClass.decls.head.asMethod.name
       q"""
         implicit object $instanceName extends $instType {
-          def $methodName(visitee: $tpe): $qresTpe = apply(visitee, scala.collection.immutable.Set[Any]())
-          def apply(visitee: $tpe, visited: scala.collection.immutable.Set[Any]) = $tree
+          def $methodName(visitee: $paramTpe): $qresTpe = apply(visitee, scala.collection.immutable.Set[Any]())
+          def apply(visitee: $paramTpe, visited: scala.collection.immutable.Set[Any]) = $tree
         }
         $instanceName
       """
     }
 
-    def implicitlyTree(tpe: c.Type, tpeOfTypeClass: c.Type): c.Tree = {
-      val instType = appliedType(tpeOfTypeClass, tpe)
-      q"implicitly[$instType]"
-    }
+    def implicitlyTree(tpe: c.Type, tpeOfTypeClass: c.Type): c.Tree =
+      q"implicitly[${appliedType(tpeOfTypeClass, tpe)}]"
 
     def fieldValueTree(name: String, tpe: c.Type, tpeOfTypeClass: c.Type): c.Tree = {
-      val instTree   = q"inst"
-      val fieldTree  = q"value"
-      val invokeTree = invoke(instTree, fieldTree)
+      val valueName     = c.fresh(TermName("value"))
+      val innerMostTree = innerMostFieldLogic(valueName, tpe, tpeOfTypeClass)
+      val getterTree    = getterLogic(name)
+      putField(getterTree, innerMostTree, valueName, name, tpe)
+    }
+
+    def getterLogic(fieldName: String): c.Tree = {
+      val projected = project(q"visitee")
+      q"$projected.${TermName(fieldName)}"
+    }
+
+    def innerMostFieldLogic(nameOfValue: c.TermName, fieldTpe: c.Type, tpeOfTypeClass: c.Type): c.Tree = {
+      val instType = appliedType(tpeOfTypeClass, fieldTpe)
       q"""
-        val inst = ${implicitlyTree(tpe, tpeOfTypeClass)}
-        val value = visitee.${TermName(name)}
-        $invokeTree
+        val inst: $instType = ${implicitlyTree(fieldTpe, tpeOfTypeClass)}
+        ${invoke(q"inst", q"$nameOfValue")}
       """
     }
+
+    def putField(getterLogic: Tree, innerMostFieldLogic: c.Tree, nameOfValue: c.TermName,
+                 fieldNameString: String, fieldTpe: c.Type): c.Tree =
+      q"""
+        val $nameOfValue: $fieldTpe = $getterLogic
+        $innerMostFieldLogic
+      """
 
     def names(tpe: c.Type): (String, c.TermName) = {
       val typeString = tpe.toString.split('.').map(_.capitalize).mkString("")
@@ -93,6 +107,15 @@ trait Traversal[R] {
       // ctor params that are also fields (TODO: verify)
       ctorParams.filter(sym => paramAccessors.find(_.name == sym.name).nonEmpty)
     }
+
+    def inject(fieldValue: c.Tree): c.Tree =
+      q"$fieldValue"
+
+    def project(param: c.Tree): c.Tree =
+      q"$param"
+
+    def preInvoke(fieldTpe: c.Type): c.Tree =
+      q"{}"
   }
 }
 
@@ -110,11 +133,18 @@ trait Query[R] extends AcyclicQuery[R] {
     import c.universe._
     import definitions.NullTpe
 
-    val tpe            = weakTypeOf[T]
-    val stpe           = weakTypeOf[S]
-    val tpeOfTypeClass = stpe.typeSymbol.asClass.companion.asType.asClass.toTypeConstructor
+    val tpe             = weakTypeOf[T]
+    val stpe            = weakTypeOf[S]
+    val typeClassClass  = stpe.typeSymbol.asClass.companion.asType.asClass
+    val tpeOfTypeClass  = typeClassClass.toTypeConstructor
     if (tpeOfTypeClass.decls.size > 1) c.abort(c.enclosingPosition, "trait must not have more than a single abstract method")
-    val qresTpe        = tpeOfTypeClass.decls.head.asMethod.returnType
+    val typeClassMethod = tpeOfTypeClass.decls.head.asMethod
+    val qresTpe         = typeClassMethod.returnType
+
+    val paramSymbol     = typeClassMethod.paramLists.head.head
+    val instType        = appliedType(tpeOfTypeClass, tpe)
+    val paramTypeRaw    = paramSymbol.typeSignature
+    val paramTypeExact  = paramTypeRaw.asSeenFrom(instType, typeClassClass)
 
     val trees = mkTrees[c.type](c)
     val tools = new Tools[c.type](c)
@@ -176,6 +206,7 @@ trait Query[R] extends AcyclicQuery[R] {
             else q"combineResult = ${trees.combine(acc, trees.separator).tree}"
           q"""
             $sepTree
+            ${trees.preInvoke(symTp)}
             val res: $qresTpe = $valueTree
             combineResult     = ${trees.combine(acc, next).tree}
           """
@@ -209,7 +240,7 @@ trait Query[R] extends AcyclicQuery[R] {
         }
     }
 
-    trees.instance(tpe, tpeOfTypeClass, qresTpe, tree)
+    trees.instance(tpe, tpeOfTypeClass, paramTypeExact, qresTpe, tree)
   }
 
 }
@@ -236,11 +267,18 @@ trait AcyclicQuery[R] extends Traversal[R] {
   def genQuery[T: c.WeakTypeTag, S <: Singleton : c.WeakTypeTag](c: Context): c.Tree = {
     import c.universe._
 
-    val tpe            = weakTypeTag[T].tpe
-    val stpe           = weakTypeTag[S].tpe
-    val tpeOfTypeClass = stpe.typeSymbol.asClass.companion.asType.asClass.toTypeConstructor
+    val tpe             = weakTypeTag[T].tpe
+    val stpe            = weakTypeTag[S].tpe
+    val typeClassClass  = stpe.typeSymbol.asClass.companion.asType.asClass
+    val tpeOfTypeClass  = typeClassClass.toTypeConstructor
     if (tpeOfTypeClass.decls.size > 1) c.abort(c.enclosingPosition, "trait must not have more than a single abstract method")
-    val qresTpe        = tpeOfTypeClass.decls.head.asMethod.returnType
+    val typeClassMethod = tpeOfTypeClass.decls.head.asMethod
+    val qresTpe         = typeClassMethod.returnType
+
+    val paramSymbol     = typeClassMethod.paramLists.head.head
+    val instType        = appliedType(tpeOfTypeClass, tpe)
+    val paramTypeRaw    = paramSymbol.typeSignature
+    val paramTypeExact  = paramTypeRaw.asSeenFrom(instType, typeClassClass)
 
     val trees = mkTrees[c.type](c)
 
@@ -290,7 +328,7 @@ trait AcyclicQuery[R] extends Traversal[R] {
         theLogic
     }
 
-    trees.instance(tpe, tpeOfTypeClass, qresTpe, tree)
+    trees.instance(tpe, tpeOfTypeClass, paramTypeExact, qresTpe, tree)
   }
 
 }
@@ -302,8 +340,15 @@ trait Transform extends Traversal[Any] {
 
     val tpe            = weakTypeTag[T].tpe
     val stpe           = weakTypeTag[S].tpe
-    val tpeOfTypeClass = stpe.typeSymbol.asClass.companion.asType.asClass.toTypeConstructor
+    val typeClassClass = stpe.typeSymbol.asClass.companion.asType.asClass
+    val tpeOfTypeClass = typeClassClass.toTypeConstructor
     if (tpeOfTypeClass.decls.size > 1) c.abort(c.enclosingPosition, "trait must not have more than a single abstract method")
+
+    val typeClassMethod = tpeOfTypeClass.decls.head.asMethod
+    val paramSymbol     = typeClassMethod.paramLists.head.head
+    val instType        = appliedType(tpeOfTypeClass, tpe)
+    val paramTypeRaw    = paramSymbol.typeSignature
+    val paramTypeExact  = paramTypeRaw.asSeenFrom(instType, typeClassClass)
 
     val trees = mkTrees[c.type](c)
 
@@ -347,7 +392,7 @@ trait Transform extends Traversal[Any] {
         theLogic
     }
 
-    trees.instance(tpe, tpeOfTypeClass, tpe, tree)
+    trees.instance(tpe, tpeOfTypeClass, paramTypeExact, tpe, tree)
   }
 
 }
