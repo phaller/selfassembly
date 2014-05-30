@@ -17,17 +17,26 @@ trait Immutable[T] {
 }
 
 object Immutable extends Property[Unit] {
-  def mkTrees[C <: Context with Singleton](c: C): Trees[C] =
+  def mkTrees[C <: Context with Singleton](c: C) =
     new Trees(c)
 
-  class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
+  class Trees[C <: Context with Singleton]
+    (override val c: C) extends super.Trees(c) {
     def check(tpe: c.Type): Unit = {
       import c.universe._
-      // if tpe has var, abort
-      val allAccessors = tpe.decls.collect { case meth: MethodSymbol if meth.isAccessor || meth.isParamAccessor => meth }
-      val varGetters   = allAccessors.collect { case meth if meth.isGetter && meth.accessed != NoSymbol && meth.accessed.asTerm.isVar => meth }
-      if (varGetters.nonEmpty) {
-        c.abort(c.enclosingPosition, "not immutable")
+
+      if (tpe.typeSymbol.isClass &&
+          !tpe.typeSymbol.asClass.isFinal &&
+          !tpe.typeSymbol.asClass.isCaseClass) {
+        c.abort(c.enclosingPosition, "instances of non-final or non-case class not guaranteed to be immutable")
+      } else {
+        // if tpe has var, abort
+        val allAccessors =
+          tpe.decls collect { case sym: MethodSymbol if sym.isAccessor || sym.isParamAccessor => sym }
+        val varGetters =
+          allAccessors collect { case sym if sym.isGetter && sym.accessed != NoSymbol && sym.accessed.asTerm.isVar => sym }
+        if (varGetters.nonEmpty)
+          c.abort(c.enclosingPosition, "not immutable")
       }
     }
   }
@@ -36,5 +45,5 @@ object Immutable extends Property[Unit] {
 
   implicit val intIsImmutable: Immutable[Int] = new Immutable[Int] { def noop(x: Int) = {} }
 
-  implicit val stringHasShow: Immutable[String] = new Immutable[String] { def noop(x: String) = {} }
+  implicit val stringIsImmutable: Immutable[String] = new Immutable[String] { def noop(x: String) = {} }
 }
