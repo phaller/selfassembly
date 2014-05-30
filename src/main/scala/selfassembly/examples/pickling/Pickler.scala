@@ -65,18 +65,13 @@ object SPickler extends Query[Unit] {
     def combine(left: c.Expr[Unit], right: c.Expr[Unit]): c.Expr[Unit] =
       c.Expr(q"$left ; $right")
 
-    def first(tpe: c.Type): c.Expr[Unit] = {
+    def delimit(tpe: c.Type): (c.Expr[Unit], c.Expr[Unit], c.Expr[Unit]) = {
       val typeString = tpe.typeSymbol.name.toString
-      c.Expr(q"""
+      val first = c.Expr(q"""
         visitee._2.beginEntry(visitee._1)
       """)
+      (first, c.Expr(q"; {}"), c.Expr(q"visitee._2.endEntry()"))
     }
-
-    def last(tpe: c.Type): c.Expr[Unit] =
-      c.Expr(q"visitee._2.endEntry()")
-
-    def separator: c.Expr[Unit] =
-      c.Expr(q"; {}")
   }
 
   implicit def generate[T]: SPickler[T] = macro genQuery[T, this.type]
