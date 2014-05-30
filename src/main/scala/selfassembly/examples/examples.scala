@@ -34,37 +34,15 @@ object ToString extends AcyclicQuery[String] {
     new Trees(c)
 
   class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
+    import c.universe._
+
     def combine(left: c.Expr[String], right: c.Expr[String]): c.Expr[String] = {
-      import c.universe._
       c.Expr[String](q"$left + $right")
     }
 
-    // Note: this can be automated based on the type of the enclosing singleton object
-    /*def instanceType(c: Context)(elemTpe: c.Type): c.Tree = {
-      import c.universe._
-      tq"ToString[$elemTpe]"
-    }*/
-
-    def first(tpe: c.Type): c.Expr[String] = {
-      import c.universe._
-      val typeString = tpe.toString.split('.').map(_.capitalize).mkString("")
-      c.Expr[String](q"""
-        $typeString + "("
-      """)
-    }
-
-    def last(tpe: c.Type): c.Expr[String] = {
-      import c.universe._
-      c.Expr[String](q"""
-        ")"
-      """)
-    }
-
-    def separator: c.Expr[String] = {
-      import c.universe._
-      c.Expr[String](q"""
-        ", "
-      """)
+    def delimit(tpe: c.Type): (c.Expr[String], c.Expr[String], c.Expr[String]) = {
+      val start = tpe.toString.split('.').map(_.capitalize).mkString("") + "("
+      (c.Expr(q"$start"), reify(", "), reify(")"))
     }
   }
 

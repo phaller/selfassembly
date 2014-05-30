@@ -189,6 +189,7 @@ trait Query[R] extends AcyclicQuery[R] {
     def theLogic: Tree = {
       val paramFields = trees.paramFieldsOf(tpe)
       val acc = c.Expr[R](q"combineResult")
+      val (first, separator, last) = trees.delimit(tpe)
 
       val fieldTrees: List[Tree] = {
         tpe match {
@@ -203,7 +204,7 @@ trait Query[R] extends AcyclicQuery[R] {
           val next      = c.Expr[R](q"res")
           val sepTree   =
             if (isFirst) { isFirst = false; q"" }
-            else q"combineResult = ${trees.combine(acc, trees.separator).tree}"
+            else q"combineResult = ${trees.combine(acc, separator).tree}"
           q"""
             $sepTree
             ${trees.preInvoke(symTp)}
@@ -217,11 +218,11 @@ trait Query[R] extends AcyclicQuery[R] {
       val lastCombine  = q"combineResult = ${trees.combine(acc, postfixTree)}"
 
       q"""
-        var combineResult: $qresTpe = ${trees.first(tpe)}
+        var combineResult: $qresTpe = $first
         if (!visited(visitee)) {
           ..$fieldTrees
         }
-        val postfix: $qresTpe = ${trees.last(tpe)}
+        val postfix: $qresTpe = $last
         $lastCombine
         combineResult
       """
@@ -257,11 +258,16 @@ trait AcyclicQuery[R] extends Traversal[R] {
 
     def instanceType(elemTpe: c.Type): c.Tree = ???
 
-    def first(tpe: c.Type): c.Expr[R]
+    def first(tpe: c.Type): c.Expr[R] =
+      delimit(tpe)._1
 
-    def last(tpe: c.Type): c.Expr[R]
+    def last(tpe: c.Type): c.Expr[R] =
+      delimit(tpe)._3
 
-    def separator: c.Expr[R]
+    def separator(tpe: c.Type): c.Expr[R] =
+      delimit(tpe)._2
+
+    def delimit(tpe: c.Type): (c.Expr[R], c.Expr[R], c.Expr[R])
   }
 
   def genQuery[T: c.WeakTypeTag, S <: Singleton : c.WeakTypeTag](c: Context): c.Tree = {
@@ -285,6 +291,7 @@ trait AcyclicQuery[R] extends Traversal[R] {
     def theLogic: Tree = {
       val paramFields = trees.paramFieldsOf(tpe)
       val acc = c.Expr[R](q"combineResult")
+      val (first, separator, last) = trees.delimit(tpe)
 
       val fieldTrees: List[Tree] = {
         tpe match {
@@ -299,7 +306,7 @@ trait AcyclicQuery[R] extends Traversal[R] {
           val next      = c.Expr[R](q"res")
           val sepTree   =
             if (isFirst) { isFirst = false; q"" }
-            else q"combineResult = ${trees.combine(acc, trees.separator)}"
+            else q"combineResult = ${trees.combine(acc, separator)}"
 
           q"""
             $sepTree
@@ -313,9 +320,9 @@ trait AcyclicQuery[R] extends Traversal[R] {
       val lastCombine  = q"combineResult = ${trees.combine(acc, postfixTree)}"
 
       q"""
-        var combineResult: $qresTpe = ${trees.first(tpe)}
+        var combineResult: $qresTpe = $first
         ..$fieldTrees
-        val postfix: $qresTpe = ${trees.last(tpe)}
+        val postfix: $qresTpe = $last
         $lastCombine
         combineResult
       """
@@ -402,32 +409,21 @@ trait Property[R] extends AcyclicQuery[R] {
   def mkTrees[C <: Context with Singleton](c: C): Trees[C]
 
   abstract class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
+    import c.universe._
+
     def check(tpe: c.Type): Unit
 
     def combine(left: c.Expr[R], right: c.Expr[R]): c.Expr[R] = {
-      import c.universe._
       c.Expr[R](q"$left ; $right")
     }
 
-    override def invoke(inst: c.Tree, value: c.Tree): c.Tree = {
-      import c.universe._
+    override def invoke(inst: c.Tree, value: c.Tree): c.Tree =
       q"{}"
-    }
 
-    def first(tpe: c.Type): c.Expr[R] = {
-      import c.universe._
+    def delimit(tpe: c.Type): (c.Expr[R], c.Expr[R], c.Expr[R]) = {
       check(tpe)
-      c.Expr[R](q"{}")
-    }
-
-    def last(tpe: c.Type): c.Expr[R] = {
-      import c.universe._
-      c.Expr[R](q"{}")
-    }
-
-    def separator: c.Expr[R] = {
-      import c.universe._
-      c.Expr[R](q"{}")
+      val empty = c.Expr(q"{}")
+      (empty, empty, empty)
     }
   }
 }

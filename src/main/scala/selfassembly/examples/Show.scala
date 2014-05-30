@@ -28,18 +28,10 @@ object Show extends Query[String] {
     def combine(left: c.Expr[String], right: c.Expr[String]): c.Expr[String] =
       c.Expr(q"$left + $right")
 
-    def first(tpe: c.Type): c.Expr[String] = {
-      val typeString = tpe.typeSymbol.name.toString
-      c.Expr(q"""
-        $typeString + "("
-      """)
+    def delimit(tpe: c.Type): (c.Expr[String], c.Expr[String], c.Expr[String]) = {
+      val start = tpe.typeSymbol.name.toString + "("
+      (c.Expr(q"$start"), reify(", "), reify(")"))
     }
-
-    def last(tpe: c.Type): c.Expr[String] =
-      reify(")")
-
-    def separator: c.Expr[String] =
-      reify(", ")
   }
 
   implicit def generate[T]: Show[T] = macro genQuery[T, this.type]
