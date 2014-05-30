@@ -19,7 +19,7 @@ trait Show[T] extends Queryable[T, String] {
 }
 
 object Show extends Query[String] {
-  def mkTrees[C <: Context with Singleton](c: C): Trees[C] =
+  def mkTrees[C <: Context with Singleton](c: C) =
     new Trees(c)
 
   class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
