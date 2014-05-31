@@ -22,6 +22,13 @@ object Compat {
     def pt: A = t._1
   }
 
+  def PicklerMacros_impl[T: c.WeakTypeTag](c: Context)(format: c.Expr[PickleFormat]): c.Expr[SPickler[T]] = {
+    //val c0: c.type = c
+    val bundle = new /*{ val c: c0.type = c0 } with*/ PicklerMacros {}
+    //c.Expr[SPickler[T]](bundle.impl[T](format.tree))
+    c.Expr[SPickler[T]](bundle.genQuery[T, SPickler.type](c))
+  }
+
   def CurrentMirrorMacro_impl(c: Context): c.Expr[ru.Mirror] = {
     val c0: c.type = c
     val bundle = new { val c: c0.type = c0 } with CurrentMirrorMacro

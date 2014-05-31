@@ -12,9 +12,9 @@ class PicklingSpec {
   @Test def testCaseClass() {
     val p = Person7("Jim", 40)
 
+    implicit val format = json.pickleFormat
     val inst = implicitly[SPickler[Person7]]
 
-    val format = json.pickleFormat
     val builder: PBuilder = format.createBuilder()
     builder.hintTag(implicitly[FastTypeTag[Person7]])
     inst.pickle((p -> builder))
@@ -25,5 +25,4 @@ class PicklingSpec {
   "age": 40
 }""")
   }
-
 }
