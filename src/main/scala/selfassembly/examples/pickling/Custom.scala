@@ -282,7 +282,7 @@ trait CollectionPicklerUnpicklerMacro extends Macro {
   }
 }
 */
-trait CorePicklersUnpicklers extends GenPicklers /*with GenUnpicklers*/ with LowPriorityPicklersUnpicklers {
+trait CorePicklersUnpicklers extends GenPicklers with GenUnpicklers with LowPriorityPicklersUnpicklers {
 /*
   import java.math.{BigDecimal, BigInteger}
   import java.util.{Date, TimeZone}
@@ -386,7 +386,7 @@ trait CorePicklersUnpicklers extends GenPicklers /*with GenUnpicklers*/ with Low
     }
   }
 */
-  class PrimitivePickler[T] extends SPickler[T] {
+  class PrimitivePicklerUnpickler[T] extends SPickler[T] with Unpickler[T] {
     val format = null // not used
     def pickle(pb: (T, PBuilder)): Unit = {
       pb._2.beginEntry(pb._1)
@@ -394,25 +394,25 @@ trait CorePicklersUnpicklers extends GenPicklers /*with GenUnpicklers*/ with Low
     }
     def apply(visitee: (T, PBuilder), visited: Set[Any]): Unit =
       pickle(visitee)
+    def unpickle(visitee: (FastTypeTag[_], PReader)): Any = {
+      visitee._2.readPrimitive()
+    }
   }
 
   // TODO: figure out why removing these pickler/unpicklers slows down evactor1
   //implicit val bytePicklerUnpickler: SPickler[Byte] with Unpickler[Byte] = new PrimitivePicklerUnpickler[Byte]
   //implicit val shortPicklerUnpickler: SPickler[Short] with Unpickler[Short] = new PrimitivePicklerUnpickler[Short]
   //implicit val charPicklerUnpickler: SPickler[Char] with Unpickler[Char] = new PrimitivePicklerUnpickler[Char]
-  //implicit val intPicklerUnpickler: SPickler[Int] with Unpickler[Int] = new PrimitivePicklerUnpickler[Int]
-  implicit val intPickler: SPickler[Int] = new PrimitivePickler[Int]
+  implicit val intPicklerUnpickler: SPickler[Int] with Unpickler[Int] = new PrimitivePicklerUnpickler[Int]
   //implicit val longPicklerUnpickler: SPickler[Long] with Unpickler[Long] = new PrimitivePicklerUnpickler[Long]
   //implicit val booleanPicklerUnpickler: SPickler[Boolean] with Unpickler[Boolean] = new PrimitivePicklerUnpickler[Boolean]
   //implicit val floatPicklerUnpickler: SPickler[Float] with Unpickler[Float] = new PrimitivePicklerUnpickler[Float]
   //implicit val doublePicklerUnpickler: SPickler[Double] with Unpickler[Double] = new PrimitivePicklerUnpickler[Double]
-  //implicit val nullPicklerUnpickler: SPickler[Null] with Unpickler[Null] = new PrimitivePicklerUnpickler[Null]
-  implicit val nullPicklerUnpickler: SPickler[Null] = new PrimitivePickler[Null]
-  //implicit val stringPicklerUnpickler: SPickler[String] with Unpickler[String] =  new PrimitivePicklerUnpickler[String]
-  implicit val stringPickler: SPickler[String] =  new PrimitivePickler[String]
+  implicit val nullPicklerUnpickler: SPickler[Null] with Unpickler[Null] = new PrimitivePicklerUnpickler[Null]
+  implicit val stringPicklerUnpickler: SPickler[String] with Unpickler[String] =  new PrimitivePicklerUnpickler[String]
 
   //implicit def refPickler: SPickler[refs.Ref] = throw new Error("cannot pickle refs") // TODO: make this a macro
-  //implicit val refUnpickler: Unpickler[refs.Ref] = new PrimitivePicklerUnpickler[refs.Ref]
+  implicit val refUnpickler: Unpickler[refs.Ref] = new PrimitivePicklerUnpickler[refs.Ref]
 
   // TODO: remove this in favor of the implicit listPickler above
   //implicit def genListPickler[T](implicit format: PickleFormat): SPickler[::[T]] with Unpickler[::[T]] = macro Compat.ListPicklerUnpicklerMacro_impl[T]

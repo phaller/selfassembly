@@ -257,6 +257,8 @@ trait AcyclicQuery[R] extends Traversal[R] {
   def mkTrees[C <: Context with Singleton](c: C): Trees[C]
 
   abstract class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
+    import c.universe._
+
     // these parameters could even be Idents!
     // the library could provide them in local vals before passing them to this user-defined method
     def combine(left: c.Expr[R], right: c.Expr[R]): c.Expr[R]
@@ -273,13 +275,31 @@ trait AcyclicQuery[R] extends Traversal[R] {
       delimit(tpe)._2
 
     def delimit(tpe: c.Type): (c.Expr[R], c.Expr[R], c.Expr[R])
+
+    def compose(tpe: c.Type, acc: c.Expr[R], separator: c.Expr[R], fieldValues: List[c.Expr[R]]): c.Expr[R] = {
+      var isFirst = true
+      val combining = fieldValues map { fieldValue =>
+        val sepTree =
+          if (isFirst) { isFirst = false; q"" }
+          else q"$acc = ${combine(acc, separator)}"
+        q"""
+          $sepTree
+          $acc = ${combine(acc, fieldValue)}
+        """
+      }
+      c.Expr[R](q"""
+        ..$combining
+        $acc
+      """)
+    }
   }
 
   def genQuery[T: c.WeakTypeTag, S <: Singleton : c.WeakTypeTag](c: Context): c.Tree = {
     import c.universe._
+    import definitions.NullTpe
 
-    val tpe             = weakTypeTag[T].tpe
-    val stpe            = weakTypeTag[S].tpe
+    val tpe             = weakTypeOf[T]
+    val stpe            = weakTypeOf[S]
     val typeClassClass  = stpe.typeSymbol.asClass.companion.asType.asClass
     val tpeOfTypeClass  = typeClassClass.toTypeConstructor
     if (tpeOfTypeClass.decls.size > 1) c.abort(c.enclosingPosition, "trait must not have more than a single abstract method")
@@ -292,13 +312,51 @@ trait AcyclicQuery[R] extends Traversal[R] {
     val paramTypeExact  = paramTypeRaw.asSeenFrom(instType, typeClassClass)
 
     val trees = mkTrees[c.type](c)
+    val tools = new Tools[c.type](c)
+
+    def genDispatchLogic: Option[c.Tree] = {
+      val sym = tpe.typeSymbol
+
+      def nonFinalDispatch = {
+        val nullDispatch =
+          CaseDef(Literal(Constant(null)), EmptyTree, trees.invokeNotVisited(trees.implicitlyTree(NullTpe, tpeOfTypeClass), q"null"))
+        val compileTimeDispatch =
+          tools.compileTimeDispatchees(tpe, rootMirror) filter (_ != NullTpe) map (subtpe =>
+            CaseDef(Bind(newTermName("clazz"), Ident(nme.WILDCARD)), q"clazz == classOf[$subtpe]",
+              trees.invokeNotVisited(trees.implicitlyTree(subtpe, tpeOfTypeClass), q"visitee.asInstanceOf[$subtpe]")
+            )
+          )
+        val registryName = c.fresh(TermName("registry"))
+        val lookupName = c.fresh(TermName("lookup"))
+        val typeOfInstance = appliedType(tpeOfTypeClass, tpe)
+        val castedInstanceTree = q"$lookupName.asInstanceOf[$typeOfInstance]"
+        val invocationTree = trees.invokeNotVisited(castedInstanceTree, q"visitee")
+
+        val registryLookup = q"""
+          val $registryName = implicitly[selfassembly.Registry[$tpeOfTypeClass]]
+          val $lookupName = $registryName.get(clazz)
+          $invocationTree
+        """
+        val runtimeDispatch =
+          CaseDef(Ident(nme.WILDCARD), EmptyTree, registryLookup)
+
+        q"""
+          val clazz = if (visitee != null) visitee.getClass else null
+          ${Match(q"clazz", nullDispatch +: compileTimeDispatch :+ runtimeDispatch)}
+        """
+      }
+
+      if (sym.asInstanceOf[scala.reflect.internal.Symbols#Symbol].isEffectivelyFinal || sym.asClass.isCaseClass) None
+      //TODO: check that the class is sealed abstract
+      else Some(nonFinalDispatch)
+    }
 
     def theLogic: Tree = {
       val paramFields = trees.paramFieldsOf(tpe)
       val acc = c.Expr[R](q"combineResult")
       val (first, separator, last) = trees.delimit(tpe)
 
-      val fieldTrees: List[Tree] = {
+      val fieldTrees: List[c.Expr[R]] = {
         tpe match {
           case ExistentialType(quantified, tpe) => c.abort(c.enclosingPosition, "urk!")
           case _ => /* do nothing */
@@ -308,28 +366,18 @@ trait AcyclicQuery[R] extends Traversal[R] {
           val symTp     = sym.typeSignatureIn(tpe)
           val fieldName = sym.name.toString.trim
           val valueTree = trees.fieldValueTree(fieldName, symTp, tpeOfTypeClass)
-          val next      = c.Expr[R](q"res")
-          val sepTree   =
-            if (isFirst) { isFirst = false; q"" }
-            else q"combineResult = ${trees.combine(acc, separator)}"
 
-          q"""
-            $sepTree
-            val res: $qresTpe = $valueTree
-            combineResult     = ${trees.combine(acc, next)}
-          """
+          c.Expr[R](q"""
+            ${trees.preInvoke(symTp)}
+            $valueTree
+          """)
         }
       }
 
-      val postfixTree  = c.Expr[R](q"postfix")
-      val lastCombine  = q"combineResult = ${trees.combine(acc, postfixTree)}"
-
       q"""
         var combineResult: $qresTpe = $first
-        ..$fieldTrees
-        val postfix: $qresTpe = $last
-        $lastCombine
-        combineResult
+        ${trees.compose(tpe, acc, separator, fieldTrees)}
+        ${trees.combine(acc, last)}
       """
     }
 
@@ -337,7 +385,13 @@ trait AcyclicQuery[R] extends Traversal[R] {
       case definitions.NothingTpe =>
         c.abort(c.enclosingPosition, "urk!")
       case _ =>
-        theLogic
+        /* tpe might be an abstract class (handle only sealed classes for now)
+           Thus, we first do a dynamic dispatch to find out which concrete instance to dispatch to.
+        */
+        genDispatchLogic match {
+          case Some(invokeInstance) => invokeInstance
+          case None => theLogic
+        }
     }
 
     trees.instance(tpe, tpeOfTypeClass, paramTypeExact, qresTpe, tree)

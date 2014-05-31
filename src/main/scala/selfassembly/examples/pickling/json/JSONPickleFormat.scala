@@ -28,12 +28,12 @@ package json {
     type OutputType = Output[String]
     def createBuilder() = new JSONPickleBuilder(this, new StringOutput)
     def createBuilder(out: Output[String]): PBuilder = new JSONPickleBuilder(this, out)
-    /*def createReader(pickle: JSONPickle, mirror: Mirror) = {
+    def createReader(pickle: JSONPickle, mirror: Mirror) = {
       JSON.parseRaw(pickle.value) match {
         case Some(raw) => new JSONPickleReader(raw, mirror, this)
         case None => throw new PicklingException("failed to parse \"" + pickle.value + "\" as JSON")
       }
-    }*/
+    }
   }
 
   class JSONPickleBuilder(format: JSONPickleFormat, buf: Output[String]) extends PBuilder with PickleTools {
@@ -160,7 +160,6 @@ package json {
     }
   }
 
-/*
   class JSONPickleReader(var datum: Any, val mirror: Mirror, format: JSONPickleFormat) extends PReader with PickleTools {
     private var lastReadTag: FastTypeTag[_] = null
     private val primitives = Map[String, () => Any](
@@ -259,5 +258,4 @@ package json {
     }
     def endCollection(): Unit = {}
   }
-*/
 }

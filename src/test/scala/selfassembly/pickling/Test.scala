@@ -2,9 +2,10 @@ package test.pickling
 
 import org.junit.Test
 import selfassembly.examples.pickling._
+import json._
 import selfassembly.SimpleRegistry
 
-case class Person7(name: String, age: Int)
+final case class Person7(name: String, age: Int)
 
 class PicklingSpec {
   implicit val reg = new SimpleRegistry[SPickler]
@@ -12,10 +13,9 @@ class PicklingSpec {
   @Test def testCaseClass() {
     val p = Person7("Jim", 40)
 
-    implicit val format = json.pickleFormat
     val inst = implicitly[SPickler[Person7]]
 
-    val builder: PBuilder = format.createBuilder()
+    val builder: JSONPickleBuilder = pickleFormat.createBuilder()
     builder.hintTag(implicitly[FastTypeTag[Person7]])
     inst.pickle((p -> builder))
     val s = builder.result.value
@@ -24,5 +24,11 @@ class PicklingSpec {
   "name": "Jim",
   "age": 40
 }""")
+
+    val pickle = JSONPickle(s)
+
+    val up = pickle.unpickle[Person7]
+
+    assert(p == up)
   }
 }

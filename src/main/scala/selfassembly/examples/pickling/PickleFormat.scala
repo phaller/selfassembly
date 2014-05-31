@@ -4,11 +4,14 @@
  */
 package selfassembly.examples.pickling
 
+import scala.language.experimental.macros
+
 trait Pickle {
   type ValueType
   val value: ValueType
 
   type PickleFormatType <: PickleFormat
+  def unpickle[T] = macro Compat.UnpickleMacros_pickleUnpickle[T]
 }
 
 trait PickleFormat {
