@@ -29,6 +29,18 @@ object Compat {
     c.Expr[SPickler[T]](bundle.genQuery[T, SPickler.type](c))
   }
 
+  def UnpickleMacros_readerUnpickle[T: c.WeakTypeTag](c: Context): c.Expr[T] = {
+    val c0: c.type = c
+    val bundle = new { val c: c0.type = c0 } with UnpickleMacros
+    c.Expr[T](bundle.readerUnpickle[T])
+  }
+
+  def UnpickleMacros_readerUnpickleTopLevel[T: c.WeakTypeTag](c: Context): c.Expr[T] = {
+    val c0: c.type = c
+    val bundle = new { val c: c0.type = c0 } with UnpickleMacros
+    c.Expr[T](bundle.readerUnpickleTopLevel[T])
+  }
+
   def CurrentMirrorMacro_impl(c: Context): c.Expr[ru.Mirror] = {
     val c0: c.type = c
     val bundle = new { val c: c0.type = c0 } with CurrentMirrorMacro

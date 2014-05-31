@@ -5,9 +5,10 @@
 package selfassembly.examples.pickling
 
 import language.experimental.macros
-import scala.reflect.macros.blackbox.Context
 
+import scala.reflect.macros.blackbox.Context
 import selfassembly.{Queryable, Query}
+import internal._
 
 // purpose of this macro: implementation of genPickler[T]. i.e. the macro that is selected
 // via implicit search and which initiates the process of generating a pickler for a given type T
@@ -70,5 +71,104 @@ trait PicklerMacros extends Query[Unit] {
       """)
       (first, c.Expr(q"; {}"), c.Expr(q"visitee._2.endEntry()"))
     }
+  }
+}
+
+// purpose of this macro: implementation of unpickle method on type Pickle, which does
+// 1) dispatch to the correct unpickler based on the type of the input,
+// 2) insert a call in the generated code to the genUnpickler macro (described above)
+trait UnpickleMacros extends Macro {
+
+  // TODO: currently this works with an assumption that sharing settings for unpickling are the same as for pickling
+  // of course this might not be the case, so we should be able to read settings from the pickle itself
+  // this is not going to be particularly pretty. unlike the fix for the runtime interpreter, this fix will be a bit of a shotgun one
+  def pickleUnpickle[T: c.WeakTypeTag]: c.Tree = {
+    import c.universe._
+    val tpe = weakTypeOf[T]
+    val pickleArg = c.prefix.tree
+    q"""
+      import scala.language.existentials
+      import scala.pickling._
+      import scala.pickling.internal._
+      val pickle = $pickleArg
+      val format = implicitly[${pickleFormatType(pickleArg)}]
+      val reader = format.createReader(pickle, scala.pickling.internal.`package`.currentMirror)
+      reader.unpickleTopLevel[$tpe]
+    """
+  }
+
+  def readerUnpickle[T: c.WeakTypeTag]: c.Tree = {
+    readerUnpickleHelper(false)
+  }
+
+  def readerUnpickleTopLevel[T: c.WeakTypeTag]: c.Tree = {
+    readerUnpickleHelper(true)
+  }
+
+  def readerUnpickleHelper[T: c.WeakTypeTag](isTopLevel: Boolean = false): c.Tree = {
+    import c.universe._
+    import definitions._
+    val tpe = weakTypeOf[T]
+    val sym = tpe.typeSymbol
+    val readerArg = c.prefix.tree
+
+    def createUnpickler(tpe: Type) = q"implicitly[Unpickler[$tpe]]"
+    def finalDispatch = {
+      if (sym.isNotNullable) createUnpickler(tpe)
+      else q"""
+        val tag = scala.pickling.FastTypeTag(typeString)
+        if (tag.key == scala.pickling.FastTypeTag.Null.key) ${createUnpickler(NullTpe)}
+        else if (tag.key == scala.pickling.FastTypeTag.Ref.key) ${createUnpickler(RefTpe)}
+        else ${createUnpickler(tpe)}
+      """
+    }
+
+    val customDispatch = CaseDef(Ident(nme.WILDCARD), EmptyTree, q"customUnpickler")
+    val refDispatch = CaseDef(Literal(Constant(FastTypeTag.Ref.key)), EmptyTree, createUnpickler(typeOf[refs.Ref]))
+
+    def nonFinalDispatch = {
+      val compileTimeDispatch = compileTimeDispatchees(tpe) map (subtpe => {
+        // TODO: do we still want to use something like HasPicklerDispatch (for unpicklers it would be routed throw tpe's companion)?
+        CaseDef(Literal(Constant(subtpe.key)), EmptyTree, createUnpickler(subtpe))
+      })
+      val runtimeDispatch = CaseDef(Ident(nme.WILDCARD), EmptyTree, q"""
+        val tag = scala.pickling.FastTypeTag(typeString)
+        Unpickler.genUnpickler(reader.mirror, tag)
+      """)
+
+      q"""
+        val customUnpickler = implicitly[Unpickler[$tpe]]
+        if (customUnpickler.isInstanceOf[PicklerUnpicklerNotFound[_]] || customUnpickler.isInstanceOf[Generated]) {
+          ${Match(q"typeString", compileTimeDispatch :+ refDispatch :+ runtimeDispatch)}
+        } else {
+          ${Match(q"typeString", List(refDispatch) :+ customDispatch)}
+        }
+      """
+    }
+
+    def abstractTypeDispatch =
+      q"""
+        val customUnpickler = implicitly[Unpickler[$tpe]]
+        ${Match(q"typeString", List(refDispatch) :+ customDispatch)}
+      """
+
+    val staticHint = if (sym.isEffectivelyFinal && !isTopLevel) (q"reader.hintStaticallyElidedType()": Tree) else q"";
+    val dispatchLogic =
+      if (sym.asType.isAbstractType) abstractTypeDispatch
+      else if (sym.isEffectivelyFinal) finalDispatch
+      else nonFinalDispatch
+    val unpickleeCleanup = if (isTopLevel && shouldBotherAboutCleaning(tpe)) q"clearUnpicklees()" else q""
+
+    q"""
+      val reader = $readerArg
+      reader.hintTag(implicitly[scala.pickling.FastTypeTag[$tpe]])
+      $staticHint
+      val typeString = reader.beginEntryNoTag()
+      val unpickler = $dispatchLogic
+      val result = unpickler.unpickle({ scala.pickling.FastTypeTag(typeString) }, reader)
+      reader.endEntry()
+      $unpickleeCleanup
+      result.asInstanceOf[$tpe]
+    """
   }
 }
