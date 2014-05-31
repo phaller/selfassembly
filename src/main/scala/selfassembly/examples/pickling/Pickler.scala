@@ -10,8 +10,6 @@ import scala.reflect.macros.blackbox.Context
 import selfassembly.{Queryable, Query}
 
 trait SPickler[T] extends Queryable[(T, PBuilder), Unit] {
-  //TODO:
-  //val format: PickleFormat
   def pickle(visitee: (T, PBuilder)): Unit
 }
 
