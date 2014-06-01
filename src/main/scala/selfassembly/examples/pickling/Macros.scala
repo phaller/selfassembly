@@ -4,10 +4,8 @@
  */
 package selfassembly.examples.pickling
 
-import language.experimental.macros
-
 import scala.reflect.macros.blackbox.Context
-import selfassembly.{Queryable, Query, AcyclicQuery}
+import selfassembly.{Query, AcyclicQuery}
 import internal._
 
 // purpose of this macro: implementation of genPickler[T]. i.e. the macro that is selected
