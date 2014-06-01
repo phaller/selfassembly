@@ -6,6 +6,8 @@ package selfassembly.examples.pickling
 
 import scala.language.experimental.macros
 
+import scala.reflect.runtime.universe.Mirror
+
 trait Pickle {
   type ValueType
   val value: ValueType
@@ -19,6 +21,5 @@ trait PickleFormat {
   type OutputType
   def createBuilder(): PBuilder
   def createBuilder(out: OutputType): PBuilder
-  //TODO:
-  //def createReader(pickle: PickleType, mirror: Mirror): PReader
+  def createReader(pickle: PickleType, mirror: Mirror): PReader
 }

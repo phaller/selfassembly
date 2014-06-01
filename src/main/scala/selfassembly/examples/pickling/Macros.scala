@@ -65,10 +65,7 @@ trait PicklerMacros extends Query[Unit] {
       c.Expr(q"$left ; $right")
 
     def delimit(tpe: c.Type): (c.Expr[Unit], c.Expr[Unit], c.Expr[Unit]) = {
-      val typeString = tpe.typeSymbol.name.toString
-      val first = c.Expr(q"""
-        visitee._2.beginEntry(visitee._1)
-      """)
+      val first = c.Expr(q"visitee._2.beginEntry(visitee._1)")
       (first, c.Expr(q"; {}"), c.Expr(q"visitee._2.endEntry()"))
     }
   }

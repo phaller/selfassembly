@@ -19,14 +19,14 @@ package binary {
 
     val value: Array[Byte]
 
-//    def createReader(mirror: Mirror, format: BinaryPickleFormat): PReader
+    def createReader(mirror: Mirror, format: BinaryPickleFormat): PReader
   }
 
   case class BinaryPickleArray(data: Array[Byte]) extends BinaryPickle {
     val value: Array[Byte] = data
 
-    /*def createReader(mirror: Mirror, format: BinaryPickleFormat): PReader =
-      new BinaryPickleReader(data, mirror, format)*/
+    def createReader(mirror: Mirror, format: BinaryPickleFormat): PReader =
+      new BinaryPickleReader(data, mirror, format)
 
     override def toString = s"""BinaryPickle(${value.mkString("[", ",", "]")})"""
   }
@@ -34,8 +34,8 @@ package binary {
   case class BinaryPickleStream(input: InputStream) extends BinaryPickle {
     val value: Array[Byte] = Array.ofDim[Byte](0)
 
-    /*def createReader(mirror: Mirror, format: BinaryPickleFormat): PReader =
-      new BinaryInputStreamReader(input, mirror, format)*/
+    def createReader(mirror: Mirror, format: BinaryPickleFormat): PReader =
+      new BinaryInputStreamReader(input, mirror, format)
 
     /* Do not override def toString to avoid traversing the input stream. */
   }
@@ -158,7 +158,7 @@ package binary {
       }
   }
 
-  /*class BinaryInputStreamReader(in: InputStream, mirror: Mirror, format: BinaryPickleFormat) extends AbstractBinaryReader(mirror) with PReader with PickleTools {
+  class BinaryInputStreamReader(in: InputStream, mirror: Mirror, format: BinaryPickleFormat) extends AbstractBinaryReader(mirror) with PReader with PickleTools {
     import format._
 
     def nextByte(): Byte = {
@@ -380,9 +380,9 @@ package binary {
     def readElement(): PReader = this
 
     def endCollection(): Unit = { /* do nothing */ }
-  }*/
+  }
 
-  /*class BinaryPickleReader(arr: Array[Byte], mirror: Mirror, format: BinaryPickleFormat) extends AbstractBinaryReader(mirror) with PReader with PickleTools {
+  class BinaryPickleReader(arr: Array[Byte], mirror: Mirror, format: BinaryPickleFormat) extends AbstractBinaryReader(mirror) with PReader with PickleTools {
     import format._
 
     private var pos = 0
@@ -488,7 +488,7 @@ package binary {
     def readElement(): PReader = this
 
     def endCollection(): Unit = { /* do nothing */ }
-  }*/
+  }
 
   class BinaryPickleFormat extends PickleFormat {
     val ELIDED_TAG: Byte = -1
@@ -527,6 +527,6 @@ package binary {
     type OutputType = ArrayOutput[Byte]
     def createBuilder() = new BinaryPickleBuilder(this, null)
     def createBuilder(out: ArrayOutput[Byte]): PBuilder = new BinaryPickleBuilder(this, out)
-    //def createReader(pickle: PickleType, mirror: Mirror) = pickle.createReader(mirror, this)
+    def createReader(pickle: PickleType, mirror: Mirror) = pickle.createReader(mirror, this)
   }
 }

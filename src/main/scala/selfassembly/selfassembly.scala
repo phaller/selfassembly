@@ -89,9 +89,12 @@ trait Traversal[R] {
       """
 
     def names(tpe: c.Type): (String, c.TermName) = {
-      val typeString = tpe.toString.split('.').map(_.capitalize).mkString("")
-      val typeName   = c.universe.TypeName(typeString)
-      (typeString, c.freshName(typeName.toTermName))
+      val typeString = {
+        val raw = tpe/*.key*/.toString.split('.').map(_.capitalize).mkString("")
+        newTypeName(raw).encoded
+      }
+      val typeName = TermName(typeString)
+      (typeString, typeName)
     }
 
     def paramFieldsOf(tpe: c.Type): List[c.Symbol] = {
