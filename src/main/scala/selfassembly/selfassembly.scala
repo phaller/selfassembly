@@ -159,6 +159,7 @@ trait Query[R] extends AcyclicQuery[R] {
 
     def genDispatchLogic: Option[c.Tree] = {
       val sym = tpe.typeSymbol
+      val projected = trees.project(q"visitee")
 
       def nonFinalDispatch = {
         val nullDispatch =
@@ -166,14 +167,14 @@ trait Query[R] extends AcyclicQuery[R] {
         val compileTimeDispatch =
           tools.compileTimeDispatchees(tpe, rootMirror) filter (_ != NullTpe) map (subtpe =>
             CaseDef(Bind(newTermName("clazz"), Ident(nme.WILDCARD)), q"clazz == classOf[$subtpe]",
-              trees.invokeNotVisited(trees.implicitlyTree(subtpe, tpeOfTypeClass), q"visitee.asInstanceOf[$subtpe]")
+              trees.invokeNotVisited(trees.implicitlyTree(subtpe, tpeOfTypeClass), q"$projected.asInstanceOf[$subtpe]")
             )
           )
         val registryName = c.fresh(TermName("registry"))
         val lookupName = c.fresh(TermName("lookup"))
         val typeOfInstance = appliedType(tpeOfTypeClass, tpe)
         val castedInstanceTree = q"$lookupName.asInstanceOf[$typeOfInstance]"
-        val invocationTree = trees.invokeNotVisited(castedInstanceTree, q"visitee")
+        val invocationTree = trees.invokeNotVisited(castedInstanceTree, projected)
 
         val registryLookup = q"""
           val $registryName = implicitly[selfassembly.Registry[$tpeOfTypeClass]]
@@ -184,7 +185,7 @@ trait Query[R] extends AcyclicQuery[R] {
           CaseDef(Ident(nme.WILDCARD), EmptyTree, registryLookup)
 
         q"""
-          val clazz = if (visitee != null) visitee.getClass else null
+          val clazz = if ($projected != null) $projected.getClass else null
           ${Match(q"clazz", nullDispatch +: compileTimeDispatch :+ runtimeDispatch)}
         """
       }
@@ -215,7 +216,6 @@ trait Query[R] extends AcyclicQuery[R] {
             else q"combineResult = ${trees.combine(acc, separator).tree}"
           q"""
             $sepTree
-            ${trees.preInvoke(symTp)}
             val res: $qresTpe = $valueTree
             combineResult     = ${trees.combine(acc, next).tree}
           """
@@ -226,6 +226,7 @@ trait Query[R] extends AcyclicQuery[R] {
       val lastCombine  = q"combineResult = ${trees.combine(acc, postfixTree)}"
 
       q"""
+        ${trees.preInvoke(tpe)}
         var combineResult: $qresTpe = $first
         if (!visited(visitee)) {
           ..$fieldTrees

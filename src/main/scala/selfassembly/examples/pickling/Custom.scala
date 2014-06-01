@@ -384,11 +384,13 @@ trait CorePicklersUnpicklers extends GenPicklers with GenUnpicklers with LowPrio
     }
   }
 */
-  class PrimitivePicklerUnpickler[T] extends SPickler[T] with Unpickler[T] {
+  class PrimitivePicklerUnpickler[T: FastTypeTag] extends SPickler[T] with Unpickler[T] {
     val format = null // not used
     def pickle(pb: (T, PBuilder)): Unit = {
-      pb._2.beginEntry(pb._1)
-      pb._2.endEntry()
+      val builder = pb._2
+      builder.hintTag(implicitly[FastTypeTag[T]])
+      builder.beginEntry(pb._1)
+      builder.endEntry()
     }
     def apply(visitee: (T, PBuilder), visited: Set[Any]): Unit =
       pickle(visitee)

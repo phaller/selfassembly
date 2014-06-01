@@ -16,7 +16,6 @@ class PicklingBinarySpec {
     val inst = implicitly[SPickler[Person2]]
 
     val builder: binary.BinaryPickleBuilder = format.createBuilder()
-    builder.hintTag(implicitly[FastTypeTag[Person2]])
     inst.pickle((p -> builder))
     val a: Array[Byte] = builder.result.value
     val s = a.mkString("[", ",", "]")
