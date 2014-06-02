@@ -23,10 +23,15 @@ trait Queryable[T, R] {
 
 trait Traversal[R] {
 
-  def mkTrees[C <: Context with Singleton](c: C): Trees[C]
+  type SContext = Context with Singleton
 
-  abstract class Trees[C <: Context with Singleton](val c: C) {
+  def mkTrees[C <: SContext](c: C): Trees[C]
+
+  abstract class Trees[C <: SContext](val c: C) {
     import c.universe._
+
+    def constant[T: c.WeakTypeTag](value: T): c.Expr[T] =
+      core.constant(c)(value)
 
     /**
      * Apply the type class instance `inst` to value `value`.

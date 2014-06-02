@@ -19,22 +19,24 @@ trait Show[T] extends Queryable[T, String] {
 }
 
 object Show extends Query[String] {
-  def mkTrees[C <: Context with Singleton](c: C) =
-    new Trees(c)
+  def mkTrees[C <: SContext](c: C) = new Trees(c)
 
-  class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
+  class Trees[C <: SContext](override val c: C)
+      extends super.Trees(c) {
     import c.universe._
+    type SExpr = c.Expr[String]
 
-    def combine(left: c.Expr[String], right: c.Expr[String]): c.Expr[String] =
-      c.Expr(q"$left + $right")
+    def combine(left: SExpr, right: SExpr) =
+      reify { left.splice + right.splice }
 
-    def delimit(tpe: c.Type): (c.Expr[String], c.Expr[String], c.Expr[String]) = {
-      val start = tpe.typeSymbol.name.toString + "("
-      (c.Expr(q"$start"), reify(", "), reify(")"))
+    def delimit(tpe: c.Type) = {
+      val start = constant(tpe.toString + "(")
+      (start, reify(", "), reify(")"))
     }
   }
 
-  implicit def generate[T]: Show[T] = macro genQuery[T, this.type]
+  implicit def generate[T]: Show[T] =
+    macro genQuery[T, this.type]
 
   implicit val intHasShow: Show[Int] = new Show[Int] {
     def show(x: Int): String = "" + x

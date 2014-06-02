@@ -40,7 +40,7 @@ class DispatchSpec {
     println(inst.show(ff))
     // prints: Firefighter(Jim, 40, 2004)
 
-    assert(inst.show(em) == "Employee(Dave, 35, 80000)")
-    assert(inst.show(ff) == "Firefighter(Jim, 40, 2004)")
+    assert(inst.show(em) == "person.Employee(Dave, 35, 80000)")
+    assert(inst.show(ff) == "person.Firefighter(Jim, 40, 2004)")
   }
 }
