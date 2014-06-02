@@ -122,7 +122,7 @@ trait Traversal[R] {
     def project(param: c.Tree): c.Tree =
       q"$param"
 
-    def preInvoke(fieldTpe: c.Type): c.Expr[Unit] =
+    def preInvoke(tpe: c.Type): c.Expr[Unit] =
       reify({})
   }
 }
@@ -202,9 +202,8 @@ trait Query[R] extends AcyclicQuery[R] {
       }
 
       val visitedExpr = c.Expr[Boolean](q"visited(visitee)") // TRUSTED
-      val (first, separator, last) = trees.delimit(tpe)
 
-      val fieldsExpr: c.Expr[R] = {
+      def fieldsExpr(begin: c.Expr[R], sep: c.Expr[R]): c.Expr[R] = {
         def fieldValueExpr(sym: c.Symbol): c.Expr[R] = {
           val symTp     = sym.typeSignatureIn(tpe)
           val fieldName = sym.name.toString.trim
@@ -212,22 +211,27 @@ trait Query[R] extends AcyclicQuery[R] {
         }
 
         val paramFields = trees.paramFieldsOf(tpe)
-        if (paramFields.size == 0) first
+        if (paramFields.size == 0) begin
         else {
           val startExpr =
-            trees.combine(first, fieldValueExpr(paramFields.head))
+            trees.combine(begin, fieldValueExpr(paramFields.head))
           if (paramFields.size == 1) startExpr
           else
             paramFields.tail.foldLeft(startExpr) { (acc, sym) =>
-              val withSep = trees.combine(acc, separator)
+              val withSep = trees.combine(acc, sep)
               trees.combine(withSep, fieldValueExpr(sym))
             }
         }
       }
 
-      val preInvoke      = trees.preInvoke(tpe)
-      val combinedFields = trees.combine(fieldsExpr, last)
-      val noFields       = trees.combine(first, last)
+      val (first, separator, last) =
+        trees.delimit(tpe)
+      val preInvoke =
+        trees.preInvoke(tpe)
+      val combinedFields =
+        trees.combine(fieldsExpr(first, separator), last)
+      val noFields =
+        trees.combine(first, last)
 
       reify {
         preInvoke.splice
@@ -371,9 +375,9 @@ trait AcyclicQuery[R] extends Traversal[R] {
           val symTp     = sym.typeSignatureIn(tpe)
           val fieldName = sym.name.toString.trim
           val valueTree = trees.fieldValueTree(fieldName, symTp, tpeOfTypeClass)
-
+          val preInvoke = trees.preInvoke(symTp)
           c.Expr[R](q"""
-            ${trees.preInvoke(symTp)}
+            $preInvoke
             $valueTree
           """)
         }

@@ -5,7 +5,7 @@
 package selfassembly.examples.pickling
 
 import scala.reflect.macros.blackbox.Context
-import selfassembly.{Query, AcyclicQuery}
+import selfassembly.{Query, AcyclicQuery, core}
 import internal._
 
 // purpose of this macro: implementation of genPickler[T]. i.e. the macro that is selected
@@ -46,10 +46,12 @@ trait PicklerMacros extends Query[Unit] {
       }
     }
 
-    override def preInvoke(tpe: c.Type): c.Expr[Unit] =
+    override def preInvoke(tpe: c.Type): c.Expr[Unit] = {
+      val tagExpr: c.Expr[FastTypeTag[_]] = core.implicitFastTypeTag(c)(tpe)
       c.Expr[Unit](
-        q"visitee._2.hintTag(implicitly[selfassembly.examples.pickling.FastTypeTag[$tpe]])"
+        q"visitee._2.hintTag($tagExpr)"
       )
+    }
 
     def combine(left: c.Expr[Unit], right: c.Expr[Unit]): c.Expr[Unit] =
       c.Expr(q"$left ; $right")

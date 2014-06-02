@@ -18,4 +18,10 @@ object core {
   def constant[T: c.WeakTypeTag](c: Context)(value: T): c.Expr[T] =
     c.Expr[T](c.universe.Literal(c.universe.Constant(value)))
 
+  def implicitFastTypeTag(c: Context)(tpe: c.Type): c.Expr[examples.pickling.FastTypeTag[_]] = {
+    import c.universe._
+    c.Expr[examples.pickling.FastTypeTag[_]](
+      q"implicitly[selfassembly.examples.pickling.FastTypeTag[$tpe]]"
+    )
+  }
 }
