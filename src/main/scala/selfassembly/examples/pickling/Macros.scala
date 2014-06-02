@@ -46,8 +46,10 @@ trait PicklerMacros extends Query[Unit] {
       }
     }
 
-    override def preInvoke(tpe: c.Type): c.Tree =
-      q"visitee._2.hintTag(implicitly[selfassembly.examples.pickling.FastTypeTag[$tpe]])"
+    override def preInvoke(tpe: c.Type): c.Expr[Unit] =
+      c.Expr[Unit](
+        q"visitee._2.hintTag(implicitly[selfassembly.examples.pickling.FastTypeTag[$tpe]])"
+      )
 
     def combine(left: c.Expr[Unit], right: c.Expr[Unit]): c.Expr[Unit] =
       c.Expr(q"$left ; $right")

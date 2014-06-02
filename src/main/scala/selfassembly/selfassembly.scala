@@ -122,8 +122,8 @@ trait Traversal[R] {
     def project(param: c.Tree): c.Tree =
       q"$param"
 
-    def preInvoke(fieldTpe: c.Type): c.Tree =
-      q"{}"
+    def preInvoke(fieldTpe: c.Type): c.Expr[Unit] =
+      reify({})
   }
 }
 
@@ -133,11 +133,11 @@ trait Traversal[R] {
  */
 trait Query[R] extends AcyclicQuery[R] {
 
-  def mkTrees[C <: Context with Singleton](c: C): Trees[C]
+  def mkTrees[C <: SContext](c: C): Trees[C]
 
-  abstract class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) { }
+  abstract class Trees[C <: SContext](override val c: C) extends super.Trees(c) { }
 
-  override def genQuery[T: c.WeakTypeTag, S <: Singleton : c.WeakTypeTag](c: Context): c.Tree = {
+  override def genQuery[T:c.WeakTypeTag, S <: Singleton : c.WeakTypeTag](c: Context): c.Tree = {
     import c.universe._
     import definitions.NullTpe
 
@@ -195,46 +195,47 @@ trait Query[R] extends AcyclicQuery[R] {
       else Some(nonFinalDispatch)
     }
 
-    def theLogic: Tree = {
-      val paramFields = trees.paramFieldsOf(tpe)
-      val acc = c.Expr[R](q"combineResult")
+    def theLogic: c.Expr[R] = {
+      tpe match {
+        case ExistentialType(quantified, tpe) => c.abort(c.enclosingPosition, "urk!")
+        case _ => /* do nothing */
+      }
+
+      val visitedExpr = c.Expr[Boolean](q"visited(visitee)") // TRUSTED
       val (first, separator, last) = trees.delimit(tpe)
 
-      val fieldTrees: List[Tree] = {
-        tpe match {
-          case ExistentialType(quantified, tpe) => c.abort(c.enclosingPosition, "urk!")
-          case _ => /* do nothing */
-        }
-        var isFirst = true
-        paramFields.map { sym =>
+      val fieldsExpr: c.Expr[R] = {
+        def fieldValueExpr(sym: c.Symbol): c.Expr[R] = {
           val symTp     = sym.typeSignatureIn(tpe)
           val fieldName = sym.name.toString.trim
-          val valueTree = trees.fieldValueTree(fieldName, symTp, tpeOfTypeClass)
-          val next      = c.Expr[R](q"res")
-          val sepTree   =
-            if (isFirst) { isFirst = false; q"" }
-            else q"combineResult = ${trees.combine(acc, separator).tree}"
-          q"""
-            $sepTree
-            val res: $qresTpe = $valueTree
-            combineResult     = ${trees.combine(acc, next).tree}
-          """
+          c.Expr[R](trees.fieldValueTree(fieldName, symTp, tpeOfTypeClass)) // TRUSTED
+        }
+
+        val paramFields = trees.paramFieldsOf(tpe)
+        if (paramFields.size == 0) first
+        else {
+          val startExpr =
+            trees.combine(first, fieldValueExpr(paramFields.head))
+          if (paramFields.size == 1) startExpr
+          else
+            paramFields.tail.foldLeft(startExpr) { (acc, sym) =>
+              val withSep = trees.combine(acc, separator)
+              trees.combine(withSep, fieldValueExpr(sym))
+            }
         }
       }
 
-      val postfixTree  = c.Expr[R](q"postfix")
-      val lastCombine  = q"combineResult = ${trees.combine(acc, postfixTree)}"
+      val preInvoke      = trees.preInvoke(tpe)
+      val combinedFields = trees.combine(fieldsExpr, last)
+      val noFields       = trees.combine(first, last)
 
-      q"""
-        ${trees.preInvoke(tpe)}
-        var combineResult: $qresTpe = $first
-        if (!visited(visitee)) {
-          ..$fieldTrees
-        }
-        val postfix: $qresTpe = $last
-        $lastCombine
-        combineResult
-      """
+      reify {
+        preInvoke.splice
+        if (!visitedExpr.splice)
+          combinedFields.splice
+        else
+          noFields.splice
+      }
     }
 
     def tree: Tree = tpe match {
@@ -246,7 +247,7 @@ trait Query[R] extends AcyclicQuery[R] {
         */
         genDispatchLogic match {
           case Some(invokeInstance) => invokeInstance
-          case None => theLogic
+          case None => theLogic.tree
         }
     }
 
