@@ -133,9 +133,9 @@ trait Traversal[R] {
  */
 trait Query[R] extends AcyclicQuery[R] {
 
-  def mkTrees[C <: SContext](c: C): Trees[C]
+  def mkTrees[C <: SContext](c: C) = new Trees(c)
 
-  abstract class Trees[C <: SContext](override val c: C) extends super.Trees(c) { }
+  class Trees[C <: SContext](override val c: C) extends super.Trees(c) { }
 
   override def genQuery[T:c.WeakTypeTag, S <: Singleton : c.WeakTypeTag](c: Context): c.Tree = {
     import c.universe._
@@ -261,16 +261,57 @@ trait Query[R] extends AcyclicQuery[R] {
 }
 
 
+trait Result[R] {
+  // needs usecase for API docs
+  def plus(other: Result[String]): Result[String] = {
+    val thisRes  = this.asInstanceOf[InternalResult[String]]
+    val otherRes = other.asInstanceOf[InternalResult[String] { type Ctx = thisRes.Ctx }]
+
+    val resExpr = thisRes.c.universe.reify { thisRes.expr.splice + otherRes.expr.splice }
+    new InternalResult[String] {
+      type Ctx = thisRes.Ctx
+      val  c   = thisRes.c
+      val  expr: c.Expr[String] = resExpr.asInstanceOf[c.universe.Expr[String]]
+    }
+  }
+}
+
+abstract class InternalResult[R] extends Result[R] {
+  type Ctx <: Context with Singleton
+  protected[selfassembly] val c: Ctx
+  protected[selfassembly] val expr: c.Expr[R]
+}
+
 trait AcyclicQuery[R] extends Traversal[R] {
+  outer =>
+
+  def combine(left: Result[R], right: Result[R]): Result[R] = ???
+
+  def delimit(rep: TypeRep): (R, R, R) = ???
 
   def mkTrees[C <: Context with Singleton](c: C): Trees[C]
 
   abstract class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
+    self =>
+
     import c.universe._
 
     // these parameters could even be Idents!
     // the library could provide them in local vals before passing them to this user-defined method
-    def combine(left: c.Expr[R], right: c.Expr[R]): c.Expr[R]
+    def combine(left: c.Expr[R], right: c.Expr[R]): c.Expr[R] = {
+      val leftRes  = new InternalResult[R] {
+        type Ctx   = C
+        val  c: self.c.type = self.c
+        val  expr  = left
+      }
+      val rightRes = new InternalResult[R] {
+        type Ctx   = C
+        val  c: self.c.type = self.c
+        val  expr  = right
+      }
+      val res = outer.combine(leftRes, rightRes)
+      res.asInstanceOf[InternalResult[R]].expr.asInstanceOf[c.Expr[R]]
+    }
 
     def instanceType(elemTpe: c.Type): c.Tree = ???
 
@@ -283,7 +324,11 @@ trait AcyclicQuery[R] extends Traversal[R] {
     def separator(tpe: c.Type): c.Expr[R] =
       delimit(tpe)._2
 
-    def delimit(tpe: c.Type): (c.Expr[R], c.Expr[R], c.Expr[R])
+    def delimit(tpe: c.Type): (c.Expr[R], c.Expr[R], c.Expr[R]) = {
+      val (typeRep, rem) = TypeRep.parse(tpe.toString)
+      val (res1, res2, res3) = outer.delimit(typeRep)
+      (c.Expr[R](Literal(Constant(res1))), c.Expr[R](Literal(Constant(res2))), c.Expr[R](Literal(Constant(res3))))
+    }
 
     def compose(tpe: c.Type, acc: c.Expr[R], separator: c.Expr[R], fieldValues: List[c.Expr[R]]): c.Expr[R] = {
       var isFirst = true
@@ -481,14 +526,14 @@ trait Property[R] extends AcyclicQuery[R] {
 
     def check(tpe: c.Type): Unit
 
-    def combine(left: c.Expr[R], right: c.Expr[R]): c.Expr[R] = {
+    override def combine(left: c.Expr[R], right: c.Expr[R]): c.Expr[R] = {
       c.Expr[R](q"$left ; $right")
     }
 
     override def invoke(inst: c.Tree, value: c.Tree): c.Tree =
       q"{}"
 
-    def delimit(tpe: c.Type): (c.Expr[R], c.Expr[R], c.Expr[R]) = {
+    override def delimit(tpe: c.Type): (c.Expr[R], c.Expr[R], c.Expr[R]) = {
       check(tpe)
       val empty = c.Expr(q"{}")
       (empty, empty, empty)

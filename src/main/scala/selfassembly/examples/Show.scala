@@ -19,21 +19,14 @@ trait Show[T] extends Queryable[T, String] {
 }
 
 object Show extends Query[String] {
-  def mkTrees[C <: SContext](c: C) = new Trees(c)
 
-  class Trees[C <: SContext](override val c: C)
-      extends super.Trees(c) {
-    import c.universe._
-    type SExpr = c.Expr[String]
+  // TODO: ideally without `override`
+  override def combine(left: Result[String], right: Result[String]) =
+    left.plus(right)
 
-    def combine(left: SExpr, right: SExpr) =
-      reify { left.splice + right.splice }
-
-    def delimit(tpe: c.Type) = {
-      val start = constant(tpe.toString + "(")
-      (start, reify(", "), reify(")"))
-    }
-  }
+  // TODO: ideally without `override`
+  override def delimit(rep: TypeRep) =
+    (rep.toString + "(", ", ", ")")
 
   implicit def generate[T]: Show[T] =
     macro genQuery[T, this.type]

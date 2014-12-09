@@ -36,11 +36,11 @@ object ToString extends AcyclicQuery[String] {
   class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c) {
     import c.universe._
 
-    def combine(left: c.Expr[String], right: c.Expr[String]): c.Expr[String] = {
+    override def combine(left: c.Expr[String], right: c.Expr[String]): c.Expr[String] = {
       c.Expr[String](q"$left + $right")
     }
 
-    def delimit(tpe: c.Type): (c.Expr[String], c.Expr[String], c.Expr[String]) = {
+    override def delimit(tpe: c.Type): (c.Expr[String], c.Expr[String], c.Expr[String]) = {
       val start = tpe.toString.split('.').map(_.capitalize).mkString("") + "("
       (c.Expr(q"$start"), reify(", "), reify(")"))
     }
