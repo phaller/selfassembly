@@ -117,10 +117,10 @@ trait Traversal[R] {
     }
 
     def inject(fieldValue: c.Tree): c.Tree =
-      q"$fieldValue"
+      fieldValue
 
     def project(param: c.Tree): c.Tree =
-      q"$param"
+      param
 
     def preInvoke(tpe: c.Type): c.Expr[Unit] =
       reify({})
@@ -454,6 +454,70 @@ trait AcyclicQuery[R] extends Traversal[R] {
 }
 
 trait Transform extends Traversal[Any] {
+
+  def genTransform[T: c.WeakTypeTag, S <: Singleton : c.WeakTypeTag](c: Context): c.Tree = {
+    import c.universe._
+
+    val tpe            = weakTypeTag[T].tpe
+    val stpe           = weakTypeTag[S].tpe
+    val typeClassClass = stpe.typeSymbol.asClass.companion.asType.asClass
+    val tpeOfTypeClass = typeClassClass.toTypeConstructor
+    if (tpeOfTypeClass.decls.size > 1) c.abort(c.enclosingPosition, "trait must not have more than a single abstract method")
+
+    val typeClassMethod = tpeOfTypeClass.decls.head.asMethod
+    val paramSymbol     = typeClassMethod.paramLists.head.head
+    val instType        = appliedType(tpeOfTypeClass, tpe)
+    val paramTypeRaw    = paramSymbol.typeSignature
+    val paramTypeExact  = paramTypeRaw.asSeenFrom(instType, typeClassClass)
+
+    val trees = mkTrees[c.type](c)
+
+    def theLogic: Tree = {
+      val paramFields = trees.paramFieldsOf(tpe)
+
+      val fieldTrees: List[Tree] = {
+        tpe match {
+          case ExistentialType(quantified, tpe) => c.abort(c.enclosingPosition, "urk!")
+          case _ => /* do nothing */
+        }
+        paramFields.map { sym => // don't call combine any more
+          val symTp      = sym.typeSignatureIn(tpe)
+          val fieldName  = sym.name.toString.trim
+          trees.fieldValueTree(fieldName, symTp, tpeOfTypeClass)
+        }
+      }
+
+      val instantiationLogic =
+        q"scala.concurrent.util.Unsafe.instance.allocateInstance(classOf[$tpe]).asInstanceOf[$tpe]"
+
+      val instance = TermName(tpe.typeSymbol.name + "Instance")
+
+      val initPendingFields = (paramFields zip fieldTrees).map {
+        case (sym, fldTree) =>
+          val fieldName = sym.name.toString.trim
+          q"$instance.${TermName(fieldName)} = $fldTree".asInstanceOf[Tree]
+      }
+
+      q"""
+        val $instance = $instantiationLogic
+        ..$initPendingFields
+        $instance
+      """
+    }
+
+    def tree: Tree = tpe match {
+      case definitions.NothingTpe =>
+        c.abort(c.enclosingPosition, "urk!")
+      case _ =>
+        theLogic
+    }
+
+    trees.instance(tpe, tpeOfTypeClass, paramTypeExact, tpe, tree)
+  }
+
+}
+
+trait Transform2 extends Traversal[Any] {
 
   def genTransform[T: c.WeakTypeTag, S <: Singleton : c.WeakTypeTag](c: Context): c.Tree = {
     import c.universe._

@@ -3,7 +3,7 @@ import selfassembly.SimpleRegistry
 import selfassembly.examples._
 
 sealed trait Person6
-case class Employee(name: String, age: Int) extends Person6
+case class Employee(var name: String, var age: Int) extends Person6
 
 class SubtypingSpec {
   @Test def testSealedTraitCaseClass() {
