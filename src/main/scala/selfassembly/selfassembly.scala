@@ -7,18 +7,7 @@
  */
 package selfassembly
 
-import scala.language.experimental.macros
 import scala.reflect.macros.blackbox.Context
-
-
-/**
- * To handle cycles in a more local way, we require type classes
- * to extend the `Queryable` trait.
- */
-trait Queryable[T, R] {
-  // used for invocations that are not top-level
-  def apply(visitee: T, visited: Set[Any]): R
-}
 
 
 trait Traversal[R] {
