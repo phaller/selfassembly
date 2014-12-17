@@ -12,10 +12,6 @@ trait Gen[T] extends Queryable[T, T] {
 }
 
 object Gen extends Transform {
-  def mkTrees[C <: Context with Singleton](c: C): Trees[C] =
-    new Trees(c)
-
-  class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c)
 
   implicit def generate[T]: Gen[T] = macro genTransform[T, this.type]
 

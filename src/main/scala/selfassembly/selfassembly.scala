@@ -455,6 +455,11 @@ trait AcyclicQuery[R] extends Traversal[R] {
 
 trait Transform extends Traversal[Any] {
 
+  def mkTrees[C <: Context with Singleton](c: C): Trees[C] =
+    new Trees(c)
+
+  class Trees[C <: Context with Singleton](override val c: C) extends super.Trees(c)
+
   def genTransform[T: c.WeakTypeTag, S <: Singleton : c.WeakTypeTag](c: Context): c.Tree = {
     import c.universe._
 
